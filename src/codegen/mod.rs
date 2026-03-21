@@ -69,19 +69,27 @@ pub fn build(manifest: &Manifest, release: bool) -> Result<()> {
         );
     }
 
-    // Run the generated build script
+    // Run the generated build script, passing release mode via env var
     let build_dir = Path::new("generated/chapeliser");
-    let status = std::process::Command::new("bash")
-        .arg(build_dir.join("build.sh"))
-        .current_dir(build_dir)
-        .status()
-        .context("Failed to run build script")?;
+    let mut cmd = std::process::Command::new("bash");
+    cmd.arg(build_dir.join("build.sh"))
+        .current_dir(build_dir);
+
+    // Pass --fast (release) or --no-optimize (debug) to Chapel via CHPL_FLAGS
+    if release {
+        cmd.env("CHPL_FLAGS", "--fast");
+        println!("  Mode: release (--fast)");
+    } else {
+        cmd.env("CHPL_FLAGS", "--no-optimize");
+        println!("  Mode: debug (--no-optimize)");
+    }
+
+    let status = cmd.status().context("Failed to run build script")?;
 
     if !status.success() {
         anyhow::bail!("Build failed with exit code: {:?}", status.code());
     }
 
-    let _ = release; // TODO: pass optimisation level to Chapel compiler
     println!(
         "Build successful: generated/chapeliser/{}_distributed",
         safe_name
@@ -115,9 +123,53 @@ pub fn run(
     cmd.arg(format!("-nl{}", locales));
 
     if let Some(cluster_file) = cluster {
-        // Chapel uses CHPL_COMM and environment variables for cluster config.
-        println!("Using cluster config: {}", cluster_file);
-        // TODO: parse cluster.toml and set GASNET_SPAWNFN, SSH_SERVERS, etc.
+        // Parse cluster.toml and set Chapel/GASNet environment variables.
+        // Chapel uses CHPL_COMM + GASNet env vars for multi-node execution.
+        let cluster_cfg = std::fs::read_to_string(cluster_file)
+            .with_context(|| format!("Failed to read cluster config: {}", cluster_file))?;
+        let cluster: toml::Value = toml::from_str(&cluster_cfg)
+            .with_context(|| format!("Failed to parse cluster config: {}", cluster_file))?;
+
+        // Set CHPL_COMM (required for multi-node)
+        if let Some(comm) = cluster.get("comm").and_then(|v| v.as_str()) {
+            cmd.env("CHPL_COMM", comm);
+            println!("  CHPL_COMM={}", comm);
+        } else {
+            // Default to gasnet-udp for cluster execution
+            cmd.env("CHPL_COMM", "gasnet");
+            cmd.env("CHPL_COMM_SUBSTRATE", "udp");
+            println!("  CHPL_COMM=gasnet (substrate=udp, default)");
+        }
+
+        // Set GASNET_SPAWNFN for how to launch on remote nodes
+        if let Some(spawn) = cluster.get("spawn").and_then(|v| v.as_str()) {
+            cmd.env("GASNET_SPAWNFN", spawn);
+            println!("  GASNET_SPAWNFN={}", spawn);
+        } else {
+            cmd.env("GASNET_SPAWNFN", "S"); // SSH spawn
+            println!("  GASNET_SPAWNFN=S (SSH, default)");
+        }
+
+        // Set SSH_SERVERS — comma-separated list of hostnames
+        if let Some(servers) = cluster.get("servers").and_then(|v| v.as_array()) {
+            let hosts: Vec<&str> = servers.iter()
+                .filter_map(|v| v.as_str())
+                .collect();
+            let hosts_str = hosts.join(",");
+            cmd.env("SSH_SERVERS", &hosts_str);
+            println!("  SSH_SERVERS={}", hosts_str);
+        }
+
+        // Optional: SSH key path
+        if let Some(key) = cluster.get("ssh-key").and_then(|v| v.as_str()) {
+            cmd.env("GASNET_SSH_OPTIONS", format!("-i {}", key));
+        }
+
+        // Optional: CHPL_RT_NUM_THREADS_PER_LOCALE
+        if let Some(threads) = cluster.get("threads-per-locale").and_then(|v| v.as_integer()) {
+            cmd.env("CHPL_RT_NUM_THREADS_PER_LOCALE", threads.to_string());
+            println!("  Threads per locale: {}", threads);
+        }
     }
 
     for arg in args {
