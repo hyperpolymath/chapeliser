@@ -104,7 +104,7 @@ pub struct ResilienceConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ChapelConfig {
     /// Extra Chapel compiler flags (e.g., "--fast", "--cache-remote").
-    #[serde(default)]
+    #[serde(rename = "compiler-flags", default)]
     pub compiler_flags: Vec<String>,
     /// Chapel communication layer: "gasnet-ibv", "gasnet-udp", "ofi", "ugni".
     #[serde(rename = "comm-layer", default)]

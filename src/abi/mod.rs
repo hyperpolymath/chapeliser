@@ -323,4 +323,233 @@ mod tests {
         assert_eq!(PartitionStrategy::from_str("adaptive"), Some(PartitionStrategy::Adaptive));
         assert_eq!(PartitionStrategy::from_str("invalid"), None);
     }
+
+    // -----------------------------------------------------------------------
+    // Additional partition tests
+    // -----------------------------------------------------------------------
+
+    /// Partition 1 item across many locales — only the first locale gets the
+    /// item, all others get zero-length slices. The partition must still be
+    /// complete and non-overlapping.
+    #[test]
+    fn per_item_partition_1_item_many_locales() {
+        let p = Partition::per_item(1, 16);
+        assert!(p.verify(), "1 item across 16 locales should be valid");
+        assert_eq!(p.slices.len(), 16);
+        // Exactly one locale gets the item
+        assert_eq!(p.slices[0].count, 1, "First locale should get the 1 item");
+        for s in &p.slices[1..] {
+            assert_eq!(s.count, 0, "Remaining locales should have 0 items");
+        }
+    }
+
+    /// Partition a prime number of items — ensures the remainder distribution
+    /// is correct (first N%K locales get one extra).
+    #[test]
+    fn per_item_partition_prime_items() {
+        // 97 items across 8 locales: 97/8 = 12 base, 97%8 = 1 remainder
+        let p = Partition::per_item(97, 8);
+        assert!(p.verify(), "97 items across 8 locales should be valid");
+        assert_eq!(p.slices.len(), 8);
+        assert_eq!(p.slices[0].count, 13, "First locale gets 12+1 = 13");
+        for s in &p.slices[1..] {
+            assert_eq!(s.count, 12, "Remaining locales get 12 each");
+        }
+        // Verify total: 13 + 7*12 = 13 + 84 = 97
+        let total: u64 = p.slices.iter().map(|s| s.count).sum();
+        assert_eq!(total, 97);
+    }
+
+    /// Another prime: 13 items across 5 locales (13/5 = 2 base, 3 remainder).
+    #[test]
+    fn per_item_partition_prime_items_2() {
+        let p = Partition::per_item(13, 5);
+        assert!(p.verify());
+        // First 3 locales get 3, last 2 get 2
+        assert_eq!(p.slices[0].count, 3);
+        assert_eq!(p.slices[1].count, 3);
+        assert_eq!(p.slices[2].count, 3);
+        assert_eq!(p.slices[3].count, 2);
+        assert_eq!(p.slices[4].count, 2);
+    }
+
+    /// Chunked partition with 1 item — single chunk, single locale gets it.
+    #[test]
+    fn chunked_partition_1_item() {
+        let p = Partition::chunked(1, 4, 10);
+        assert!(p.verify(), "Chunked partition of 1 item should be valid");
+        let non_empty: Vec<_> = p.slices.iter().filter(|s| s.count > 0).collect();
+        assert_eq!(non_empty.len(), 1, "Only one locale should have the item");
+        assert_eq!(non_empty[0].count, 1);
+    }
+
+    /// Chunked partition where grain_size > total_items.
+    #[test]
+    fn chunked_partition_large_grain() {
+        let p = Partition::chunked(5, 4, 100);
+        assert!(p.verify(), "Chunked partition with large grain should be valid");
+        // All items in one chunk on one locale
+        let total: u64 = p.slices.iter().map(|s| s.count).sum();
+        assert_eq!(total, 5);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional GatherResult tests
+    // -----------------------------------------------------------------------
+
+    /// GatherResult with 0 total results and empty locale_counts.
+    #[test]
+    fn gather_result_zero_results() {
+        let g = GatherResult {
+            total_results: 0,
+            locale_counts: vec![],
+            strategy: GatherStrategy::Merge,
+        };
+        assert!(
+            g.verify_conservation(),
+            "0 results with empty locale_counts should be conserved"
+        );
+    }
+
+    /// GatherResult with 0 total results but non-empty (all zero) locale_counts.
+    #[test]
+    fn gather_result_zero_results_many_locales() {
+        let g = GatherResult {
+            total_results: 0,
+            locale_counts: vec![0, 0, 0, 0],
+            strategy: GatherStrategy::Reduce,
+        };
+        assert!(
+            g.verify_conservation(),
+            "0 results across 4 locales should be conserved"
+        );
+    }
+
+    /// GatherResult conservation fails when total_results != sum(locale_counts).
+    #[test]
+    fn gather_result_conservation_fails() {
+        let g = GatherResult {
+            total_results: 100,
+            locale_counts: vec![25, 25, 25, 24], // sum=99, not 100
+            strategy: GatherStrategy::Merge,
+        };
+        assert!(
+            !g.verify_conservation(),
+            "Mismatched total should fail conservation check"
+        );
+    }
+
+    /// GatherResult with a single locale holding all results.
+    #[test]
+    fn gather_result_single_locale() {
+        let g = GatherResult {
+            total_results: 42,
+            locale_counts: vec![42],
+            strategy: GatherStrategy::First,
+        };
+        assert!(g.verify_conservation());
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional MemoryBudget tests
+    // -----------------------------------------------------------------------
+
+    /// MemoryBudget with 0 max_item_bytes — everything should be zero except
+    /// the metadata overhead.
+    #[test]
+    fn memory_budget_zero_item_bytes() {
+        let budget = MemoryBudget::calculate(100, 4, 0);
+        assert_eq!(budget.input_bytes, 0, "0 max_item_bytes means 0 input buffer");
+        assert_eq!(budget.output_bytes, 0, "0 max_item_bytes means 0 output buffer");
+        assert!(budget.metadata_bytes > 0, "Metadata bytes should still be non-zero");
+        assert_eq!(
+            budget.total_bytes,
+            budget.metadata_bytes,
+            "Total should be metadata only"
+        );
+    }
+
+    /// MemoryBudget with 1 locale — all items on one node.
+    #[test]
+    fn memory_budget_single_locale() {
+        let budget = MemoryBudget::calculate(100, 1, 1024);
+        // items_per_locale = 100/1 + 1 = 101
+        assert_eq!(budget.items_per_locale, 101);
+        assert_eq!(budget.input_bytes, 101 * 1024);
+        assert_eq!(budget.output_bytes, 101 * 1024);
+    }
+
+    /// MemoryBudget with very large item size — check total_mb calculation.
+    #[test]
+    fn memory_budget_large_items() {
+        // 10 items, 2 locales, 100MB per item
+        let budget = MemoryBudget::calculate(10, 2, 100 * 1_048_576);
+        // items_per_locale = 10/2 + 1 = 6
+        assert_eq!(budget.items_per_locale, 6);
+        // input = 6 * 100MB = 600MB, output = 600MB, meta = 6*9 = 54
+        assert_eq!(budget.input_bytes, 6 * 100 * 1_048_576);
+        assert!(budget.total_mb >= 1200, "Should be at least 1200MB");
+    }
+
+    /// MemoryBudget with 1 item and many locales — items_per_locale should be 1.
+    #[test]
+    fn memory_budget_1_item_many_locales() {
+        let budget = MemoryBudget::calculate(1, 100, 4096);
+        // items_per_locale = 1/100 + 1 = 0 + 1 = 1
+        assert_eq!(budget.items_per_locale, 1);
+        assert_eq!(budget.input_bytes, 4096);
+        assert_eq!(budget.output_bytes, 4096);
+    }
+
+    // -----------------------------------------------------------------------
+    // Additional strategy parsing tests
+    // -----------------------------------------------------------------------
+
+    /// All five partition strategy strings parse correctly.
+    #[test]
+    fn partition_strategy_all_valid() {
+        let pairs = [
+            ("per-item", PartitionStrategy::PerItem),
+            ("chunk", PartitionStrategy::Chunk),
+            ("adaptive", PartitionStrategy::Adaptive),
+            ("spatial", PartitionStrategy::Spatial),
+            ("keyed", PartitionStrategy::Keyed),
+        ];
+        for (s, expected) in &pairs {
+            assert_eq!(
+                PartitionStrategy::from_str(s),
+                Some(*expected),
+                "'{s}' should parse to {expected:?}"
+            );
+        }
+    }
+
+    /// All five gather strategy strings parse correctly.
+    #[test]
+    fn gather_strategy_all_valid() {
+        let pairs = [
+            ("merge", GatherStrategy::Merge),
+            ("reduce", GatherStrategy::Reduce),
+            ("tree-reduce", GatherStrategy::TreeReduce),
+            ("stream", GatherStrategy::Stream),
+            ("first", GatherStrategy::First),
+        ];
+        for (s, expected) in &pairs {
+            assert_eq!(
+                GatherStrategy::from_str(s),
+                Some(*expected),
+                "'{s}' should parse to {expected:?}"
+            );
+        }
+    }
+
+    /// Invalid strategy strings return None for both partition and gather.
+    #[test]
+    fn strategy_parsing_rejects_invalid() {
+        let invalids = ["", "MERGE", "per_item", "Per-Item", "tree_reduce", " merge"];
+        for s in &invalids {
+            assert_eq!(PartitionStrategy::from_str(s), None, "Partition should reject '{s}'");
+            assert_eq!(GatherStrategy::from_str(s), None, "Gather should reject '{s}'");
+        }
+    }
 }
