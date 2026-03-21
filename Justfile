@@ -32,6 +32,10 @@ doc:
 clean:
     cargo clean
 
+# Generate from example manifest
+generate:
+    cargo run -- generate examples/panic-attacker/chapeliser.toml
+
 # Run the CLI
 run *ARGS:
     cargo run -- {{ARGS}}
