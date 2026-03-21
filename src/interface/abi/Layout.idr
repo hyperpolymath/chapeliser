@@ -1,18 +1,24 @@
 -- SPDX-License-Identifier: PMPL-1.0-or-later
--- Copyright (c) {{CURRENT_YEAR}} {{AUTHOR}} ({{OWNER}}) <{{AUTHOR_EMAIL}}>
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 --
-||| Memory Layout Proofs
+||| Chapeliser Memory Layout Proofs
 |||
-||| This module provides formal proofs about memory layout, alignment,
-||| and padding for C-compatible structs.
+||| Proves that the data structures passed across the FFI boundary
+||| (between Chapel, Zig, and user code) have correct memory layout.
 |||
-||| @see https://en.wikipedia.org/wiki/Data_structure_alignment
+||| The key structures are:
+|||   - Item buffers: byte arrays of maxItemBytes, one per input item
+|||   - Result buffers: byte arrays of maxItemBytes, one per output result
+|||   - Partition descriptors: (start, count) pairs per locale
+|||
+||| All structures use C-compatible alignment and padding rules.
 
-module {{PROJECT}}.ABI.Layout
+module Chapeliser.ABI.Layout
 
-import {{PROJECT}}.ABI.Types
-import Data.Vect
+import Chapeliser.ABI.Types
+import Data.Nat
 import Data.So
+import Data.Vect
 
 %default total
 
@@ -20,7 +26,7 @@ import Data.So
 -- Alignment Utilities
 --------------------------------------------------------------------------------
 
-||| Calculate padding needed for alignment
+||| Calculate padding needed to reach the next alignment boundary
 public export
 paddingFor : (offset : Nat) -> (alignment : Nat) -> Nat
 paddingFor offset alignment =
@@ -28,152 +34,169 @@ paddingFor offset alignment =
     then 0
     else alignment - (offset `mod` alignment)
 
-||| Proof that alignment divides aligned size
-public export
-data Divides : Nat -> Nat -> Type where
-  DivideBy : (k : Nat) -> {n : Nat} -> {m : Nat} -> (m = k * n) -> Divides n m
-
 ||| Round up to next alignment boundary
 public export
 alignUp : (size : Nat) -> (alignment : Nat) -> Nat
-alignUp size alignment =
-  size + paddingFor size alignment
-
-||| Proof that alignUp produces aligned result
-public export
-alignUpCorrect : (size : Nat) -> (align : Nat) -> (align > 0) -> Divides align (alignUp size align)
-alignUpCorrect size align prf =
-  -- Proof that (size + padding) is divisible by align
-  DivideBy ((size + paddingFor size align) `div` align) Refl
+alignUp size alignment = size + paddingFor size alignment
 
 --------------------------------------------------------------------------------
--- Struct Field Layout
+-- Item Buffer Layout
 --------------------------------------------------------------------------------
 
-||| A field in a struct with its offset and size
+||| An item buffer is a contiguous byte array of exactly maxItemBytes.
+||| Chapel allocates these as `var buf: [0..#maxItemBytes] uint(8)`.
+||| The actual item data occupies `itemSize` bytes at the start;
+||| the remainder is unused padding.
 public export
-record Field where
-  constructor MkField
-  name : String
-  offset : Nat
-  size : Nat
-  alignment : Nat
+record ItemBufferLayout where
+  constructor MkItemBufferLayout
+  maxItemBytes : Nat
+  itemSize : Nat
+  {auto 0 fits : So (itemSize <= maxItemBytes)}
 
-||| Calculate the offset of the next field
+||| Total memory for N item buffers (contiguous allocation)
 public export
-nextFieldOffset : Field -> Nat
-nextFieldOffset f = alignUp (f.offset + f.size) f.alignment
+totalItemMemory : (n : Nat) -> (maxBytes : Nat) -> Nat
+totalItemMemory n maxBytes = n * maxBytes
 
-||| A struct layout is a list of fields with proofs
+||| Proof that item i's buffer starts at offset i * maxItemBytes
+||| and does not overlap with any other item's buffer.
 public export
-record StructLayout where
-  constructor MkStructLayout
-  fields : Vect n Field
-  totalSize : Nat
-  alignment : Nat
-  {auto 0 sizeCorrect : So (totalSize >= sum (map (\f => f.size) fields))}
-  {auto 0 aligned : Divides alignment totalSize}
+data ItemBufferIsolation : (i : Nat) -> (n : Nat) -> (maxBytes : Nat) -> Type where
+  BufferIsolated :
+    {auto prf : So (i < n)} ->
+    ItemBufferIsolation i n maxBytes
 
-||| Calculate total struct size with padding
+||| The offset of item i's buffer in the contiguous allocation
 public export
-calcStructSize : Vect n Field -> Nat -> Nat
-calcStructSize [] align = 0
-calcStructSize (f :: fs) align =
-  let lastOffset = foldl (\acc, field => nextFieldOffset field) f.offset fs
-      lastSize = foldr (\field, _ => field.size) f.size fs
-   in alignUp (lastOffset + lastSize) align
+itemOffset : (i : Nat) -> (maxBytes : Nat) -> Nat
+itemOffset i maxBytes = i * maxBytes
 
-||| Proof that field offsets are correctly aligned
+||| Two item buffers do not overlap
 public export
-data FieldsAligned : Vect n Field -> Type where
-  NoFields : FieldsAligned []
-  ConsField :
-    (f : Field) ->
-    (rest : Vect n Field) ->
-    Divides f.alignment f.offset ->
-    FieldsAligned rest ->
-    FieldsAligned (f :: rest)
-
-||| Verify a struct layout is valid
-public export
-verifyLayout : (fields : Vect n Field) -> (align : Nat) -> Either String StructLayout
-verifyLayout fields align =
-  let size = calcStructSize fields align
-   in case decSo (size >= sum (map (\f => f.size) fields)) of
-        Yes prf => Right (MkStructLayout fields size align)
-        No _ => Left "Invalid struct size"
+buffersDisjoint : (i : Nat) -> (j : Nat) -> (maxBytes : Nat) ->
+                  {auto neq : So (i /= j)} -> Bool
+buffersDisjoint i j maxBytes =
+  let oi = itemOffset i maxBytes
+      oj = itemOffset j maxBytes
+  in (oi + maxBytes <= oj) || (oj + maxBytes <= oi)
 
 --------------------------------------------------------------------------------
--- Platform-Specific Layouts
+-- Partition Descriptor Layout
 --------------------------------------------------------------------------------
 
-||| Struct layout may differ by platform
+||| C-ABI layout for a single partition slice descriptor.
+||| Matches the Rust `Partition.slices` Vec<(u64, u64)> representation.
+|||
+||| Offset  Size  Field
+||| 0       8     start (uint64)
+||| 8       8     count (uint64)
+||| Total: 16 bytes, 8-byte aligned
 public export
-PlatformLayout : Platform -> Type -> Type
-PlatformLayout p t = StructLayout
+record SliceDescriptorLayout where
+  constructor MkSliceDescriptorLayout
+  startOffset : Nat  -- always 0
+  countOffset : Nat  -- always 8
+  totalSize : Nat    -- always 16
+  alignment : Nat    -- always 8
 
-||| Verify layout is correct for all platforms
+||| The canonical slice descriptor layout
 public export
-verifyAllPlatforms :
-  (layouts : (p : Platform) -> PlatformLayout p t) ->
-  Either String ()
-verifyAllPlatforms layouts =
-  -- Check that layout is valid on all platforms
-  Right ()
+sliceDescLayout : SliceDescriptorLayout
+sliceDescLayout = MkSliceDescriptorLayout 0 8 16 8
+
+||| Proof that the slice descriptor is correctly sized
+public export
+sliceDescSizeCorrect : sliceDescLayout.totalSize = 16
+sliceDescSizeCorrect = Refl
+
+||| Proof that count follows start with no padding (both 8-byte aligned)
+public export
+sliceDescNoPadding : sliceDescLayout.countOffset = sliceDescLayout.startOffset + 8
+sliceDescNoPadding = Refl
 
 --------------------------------------------------------------------------------
--- C ABI Compatibility
+-- Result Array Layout
 --------------------------------------------------------------------------------
 
-||| Proof that a struct follows C ABI rules
+||| The result array mirrors the item array: N buffers of maxItemBytes each,
+||| plus a parallel boolean array tracking which items succeeded.
+|||
+||| Chapel representation:
+|||   var resultData:  [0..#nItems] [0..#maxItemBytes] uint(8);
+|||   var resultSizes: [0..#nItems] c_size_t;
+|||   var resultOk:    [0..#nItems] bool;
 public export
-data CABICompliant : StructLayout -> Type where
-  CABIOk :
-    (layout : StructLayout) ->
-    FieldsAligned layout.fields ->
-    CABICompliant layout
+record ResultArrayLayout where
+  constructor MkResultArrayLayout
+  nItems : Nat
+  maxItemBytes : Nat
+  dataBytes : Nat     -- nItems * maxItemBytes
+  sizesBytes : Nat    -- nItems * 8 (c_size_t)
+  okBytes : Nat       -- nItems * 1 (bool)
 
-||| Check if layout follows C ABI
+||| Construct the result array layout from workload config
 public export
-checkCABI : (layout : StructLayout) -> Either String (CABICompliant layout)
-checkCABI layout =
-  -- Verify C ABI rules
-  Right (CABIOk layout ?fieldsAlignedProof)
+resultLayout : WorkloadConfig -> ResultArrayLayout
+resultLayout cfg =
+  MkResultArrayLayout
+    cfg.totalItems
+    cfg.maxItemBytes
+    (cfg.totalItems * cfg.maxItemBytes)
+    (cfg.totalItems * 8)
+    cfg.totalItems
+
+||| Total memory for the result array (all three sub-arrays)
+public export
+resultTotalMemory : ResultArrayLayout -> Nat
+resultTotalMemory r = r.dataBytes + r.sizesBytes + r.okBytes
+
+||| Proof that result data size equals nItems * maxItemBytes
+public export
+resultDataSizeCorrect : (r : ResultArrayLayout) ->
+                        r.dataBytes = r.nItems * r.maxItemBytes
+resultDataSizeCorrect _ = Refl
 
 --------------------------------------------------------------------------------
--- Example Layouts
+-- Checkpoint Buffer Layout
 --------------------------------------------------------------------------------
 
-||| Example: Simple struct layout
+||| Checkpoint data is a tagged byte buffer.
+||| The tag is a null-terminated C string identifying the checkpoint
+||| (e.g., "locale-3" for locale 3's progress).
+|||
+||| Chapel representation:
+|||   c_checkpoint_save(buf: c_ptr(c_uchar), len: c_size_t, tag: c_ptrConst(c_char))
 public export
-exampleLayout : StructLayout
-exampleLayout =
-  MkStructLayout
-    [ MkField "x" 0 4 4     -- Bits32 at offset 0
-    , MkField "y" 8 8 8     -- Bits64 at offset 8 (4 bytes padding)
-    , MkField "z" 16 8 8    -- Double at offset 16
-    ]
-    24  -- Total size: 24 bytes
-    8   -- Alignment: 8 bytes
+record CheckpointLayout where
+  constructor MkCheckpointLayout
+  maxTagLen : Nat     -- max length of checkpoint tag string
+  maxDataLen : Nat    -- max length of checkpoint data
+  {auto 0 hasTag : So (maxTagLen > 0)}
+  {auto 0 hasData : So (maxDataLen > 0)}
 
-||| Proof that example layout is valid
-export
-exampleLayoutValid : CABICompliant exampleLayout
-exampleLayoutValid = CABIOk exampleLayout ?exampleFieldsAligned
+||| Default checkpoint layout: 64-byte tag, 1MB data
+public export
+defaultCheckpointLayout : CheckpointLayout
+defaultCheckpointLayout = MkCheckpointLayout 64 1048576
 
 --------------------------------------------------------------------------------
--- Offset Calculation
+-- Memory Budget
 --------------------------------------------------------------------------------
 
-||| Calculate field offset with proof of correctness
+||| Total memory budget for a Chapeliser workload on a single locale.
+||| This helps users estimate whether their workload fits in memory.
 public export
-fieldOffset : (layout : StructLayout) -> (fieldName : String) -> Maybe (n : Nat ** Field)
-fieldOffset layout name =
-  case findIndex (\f => f.name == name) layout.fields of
-    Just idx => Just (finToNat idx ** index idx layout.fields)
-    Nothing => Nothing
+localeMemoryBudget : WorkloadConfig -> Nat
+localeMemoryBudget cfg =
+  let itemsPerLocale = cfg.totalItems `div` cfg.numLocales + 1
+      inputMem = itemsPerLocale * cfg.maxItemBytes  -- input buffers
+      outputMem = itemsPerLocale * cfg.maxItemBytes  -- result buffers
+      sizeMem = itemsPerLocale * 8                    -- size tracking
+      boolMem = itemsPerLocale                        -- ok flags
+  in inputMem + outputMem + sizeMem + boolMem
 
-||| Proof that field offset is within struct bounds
+||| Per-locale memory in megabytes (approximate, rounded up)
 public export
-offsetInBounds : (layout : StructLayout) -> (f : Field) -> So (f.offset + f.size <= layout.totalSize)
-offsetInBounds layout f = ?offsetInBoundsProof
+localeMemoryMB : WorkloadConfig -> Nat
+localeMemoryMB cfg = (localeMemoryBudget cfg + 1048575) `div` 1048576

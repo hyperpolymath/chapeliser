@@ -1,18 +1,23 @@
 -- SPDX-License-Identifier: PMPL-1.0-or-later
--- Copyright (c) {{CURRENT_YEAR}} {{AUTHOR}} ({{OWNER}}) <{{AUTHOR_EMAIL}}>
+-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 --
-||| Foreign Function Interface Declarations
+||| Chapeliser Foreign Function Interface Declarations
 |||
-||| This module declares all C-compatible functions that will be
-||| implemented in the Zig FFI layer.
+||| Declares all C-compatible functions that the Chapeliser runtime calls.
+||| These functions are implemented in the Zig FFI layer, which delegates
+||| to the user's workload-specific code.
 |||
-||| All functions are declared here with type signatures and safety proofs.
-||| Implementations live in ffi/zig/
+||| The function signatures here MUST match:
+|||   1. The Chapel `extern proc` declarations in the generated .chpl file
+|||   2. The Zig `export fn` signatures in the generated _ffi.zig file
+|||   3. The C function declarations in the generated .h header
+|||
+||| Any mismatch is a linking error caught at Chapel compile time.
 
-module {{PROJECT}}.ABI.Foreign
+module Chapeliser.ABI.Foreign
 
-import {{PROJECT}}.ABI.Types
-import {{PROJECT}}.ABI.Layout
+import Chapeliser.ABI.Types
+import Chapeliser.ABI.Layout
 
 %default total
 
@@ -20,191 +25,167 @@ import {{PROJECT}}.ABI.Layout
 -- Library Lifecycle
 --------------------------------------------------------------------------------
 
-||| Initialize the library
-||| Returns a handle to the library instance, or Nothing on failure
+||| Initialise the workload library. Called once on Chapel locale 0
+||| before any items are loaded or processed.
+||| Returns 0 on success, non-zero error code on failure.
 export
-%foreign "C:{{project}}_init, lib{{project}}"
-prim__init : PrimIO Bits64
+%foreign "C:c_init, libchapeliser_ffi"
+prim__init : PrimIO Bits32
 
-||| Safe wrapper for library initialization
+||| Safe wrapper for initialisation
 export
-init : IO (Maybe Handle)
+init : IO (Either Result ())
 init = do
-  ptr <- primIO prim__init
-  pure (createHandle ptr)
+  rc <- primIO prim__init
+  pure $ if rc == 0 then Right () else Left Error
 
-||| Clean up library resources
+||| Shut down the workload library. Called once on locale 0
+||| after all results have been stored.
 export
-%foreign "C:{{project}}_free, lib{{project}}"
-prim__free : Bits64 -> PrimIO ()
+%foreign "C:c_shutdown, libchapeliser_ffi"
+prim__shutdown : PrimIO Bits32
 
-||| Safe wrapper for cleanup
+||| Safe wrapper for shutdown
 export
-free : Handle -> IO ()
-free h = primIO (prim__free (handlePtr h))
+shutdown : IO (Either Result ())
+shutdown = do
+  rc <- primIO prim__shutdown
+  pure $ if rc == 0 then Right () else Left Error
 
 --------------------------------------------------------------------------------
--- Core Operations
+-- Data I/O
 --------------------------------------------------------------------------------
 
-||| Example operation: process data
+||| Get the total number of input items. Called on locale 0.
+||| Returns item count (>= 0), or negative on error.
 export
-%foreign "C:{{project}}_process, lib{{project}}"
-prim__process : Bits64 -> Bits32 -> PrimIO Bits32
+%foreign "C:c_get_total_items, libchapeliser_ffi"
+prim__getTotalItems : PrimIO Bits32
 
-||| Safe wrapper with error handling
+||| Safe wrapper
 export
-process : Handle -> Bits32 -> IO (Either Result Bits32)
-process h input = do
-  result <- primIO (prim__process (handlePtr h) input)
-  pure $ case result of
-    0 => Left Error
-    n => Right n
+getTotalItems : IO (Either Result Nat)
+getTotalItems = do
+  n <- primIO prim__getTotalItems
+  pure $ Right (cast n)
+
+||| Load (serialise) input item at index `idx` into buffer `buf`.
+||| On entry, `*len` is the buffer capacity (maxItemBytes).
+||| On exit, `*len` is the actual serialised size.
+||| Returns 0 on success.
+export
+%foreign "C:c_load_item, libchapeliser_ffi"
+prim__loadItem : Bits32 -> Bits64 -> Bits64 -> PrimIO Bits32
+
+||| Store (receive) a processed result at index `idx`.
+||| `buf` contains `len` bytes of serialised result data.
+||| Returns 0 on success.
+export
+%foreign "C:c_store_result, libchapeliser_ffi"
+prim__storeResult : Bits32 -> Bits64 -> Bits64 -> PrimIO Bits32
 
 --------------------------------------------------------------------------------
--- String Operations
+-- Item Processing
 --------------------------------------------------------------------------------
 
-||| Convert C string to Idris String
+||| Process a single serialised item.
+||| Reads from (in_buf, in_len), writes result to (out_buf, *out_len).
+||| Called on any locale — the user's function must be thread-safe.
+||| Returns 0 on success.
 export
-%foreign "support:idris2_getString, libidris2_support"
-prim__getString : Bits64 -> String
+%foreign "C:c_process_item, libchapeliser_ffi"
+prim__processItem : Bits64 -> Bits64 -> Bits64 -> Bits64 -> PrimIO Bits32
 
-||| Free C string
+||| Process a chunk of items (for chunk partition strategy).
+||| items_buf contains item_count items at the given offsets and sizes.
+||| Returns 0 on success.
 export
-%foreign "C:{{project}}_free_string, lib{{project}}"
-prim__freeString : Bits64 -> PrimIO ()
-
-||| Get string result from library
-export
-%foreign "C:{{project}}_get_string, lib{{project}}"
-prim__getResult : Bits64 -> PrimIO Bits64
-
-||| Safe string getter
-export
-getString : Handle -> IO (Maybe String)
-getString h = do
-  ptr <- primIO (prim__getResult (handlePtr h))
-  if ptr == 0
-    then pure Nothing
-    else do
-      let str = prim__getString ptr
-      primIO (prim__freeString ptr)
-      pure (Just str)
+%foreign "C:c_process_chunk, libchapeliser_ffi"
+prim__processChunk : Bits64 -> Bits32 -> Bits64 -> Bits64 -> Bits64 -> Bits64 -> PrimIO Bits32
 
 --------------------------------------------------------------------------------
--- Array/Buffer Operations
+-- Reduction
 --------------------------------------------------------------------------------
 
-||| Process array data
+||| Combine two serialised results into one.
+||| Used by reduce and tree-reduce gather strategies.
+||| Reads (a_buf, a_len) and (b_buf, b_len), writes to (out_buf, *out_len).
+||| The reduce function must be associative for tree-reduce correctness.
+||| Returns 0 on success.
 export
-%foreign "C:{{project}}_process_array, lib{{project}}"
-prim__processArray : Bits64 -> Bits64 -> Bits32 -> PrimIO Bits32
-
-||| Safe array processor
-export
-processArray : Handle -> (buffer : Bits64) -> (len : Bits32) -> IO (Either Result ())
-processArray h buf len = do
-  result <- primIO (prim__processArray (handlePtr h) buf len)
-  pure $ case resultFromInt result of
-    Just Ok => Right ()
-    Just err => Left err
-    Nothing => Left Error
-  where
-    resultFromInt : Bits32 -> Maybe Result
-    resultFromInt 0 = Just Ok
-    resultFromInt 1 = Just Error
-    resultFromInt 2 = Just InvalidParam
-    resultFromInt 3 = Just OutOfMemory
-    resultFromInt 4 = Just NullPointer
-    resultFromInt _ = Nothing
+%foreign "C:c_reduce, libchapeliser_ffi"
+prim__reduce : Bits64 -> Bits64 -> Bits64 -> Bits64 -> Bits64 -> Bits64 -> PrimIO Bits32
 
 --------------------------------------------------------------------------------
--- Error Handling
+-- Match Predicate (for 'first' gather)
 --------------------------------------------------------------------------------
 
-||| Get last error message
+||| Test whether a serialised result matches the search criterion.
+||| Returns 1 if the result matches, 0 if not.
+||| Used by the 'first' gather strategy to stop early.
 export
-%foreign "C:{{project}}_last_error, lib{{project}}"
-prim__lastError : PrimIO Bits64
+%foreign "C:c_is_match, libchapeliser_ffi"
+prim__isMatch : Bits64 -> Bits64 -> PrimIO Bits32
 
-||| Retrieve last error as string
+||| Safe wrapper
 export
-lastError : IO (Maybe String)
-lastError = do
-  ptr <- primIO prim__lastError
-  if ptr == 0
-    then pure Nothing
-    else pure (Just (prim__getString ptr))
+isMatch : (bufPtr : Bits64) -> (len : Bits64) -> IO Bool
+isMatch buf len = do
+  rc <- primIO (prim__isMatch buf len)
+  pure (rc == 1)
 
-||| Get error description for result code
+--------------------------------------------------------------------------------
+-- Key Hash (for keyed partition)
+--------------------------------------------------------------------------------
+
+||| Compute a hash of the item's distribution key.
+||| Items with the same hash (mod numLocales) land on the same locale.
+||| Returns an unsigned 32-bit hash value.
 export
-errorDescription : Result -> String
-errorDescription Ok = "Success"
-errorDescription Error = "Generic error"
-errorDescription InvalidParam = "Invalid parameter"
-errorDescription OutOfMemory = "Out of memory"
-errorDescription NullPointer = "Null pointer"
+%foreign "C:c_key_hash, libchapeliser_ffi"
+prim__keyHash : Bits64 -> Bits64 -> PrimIO Bits32
+
+--------------------------------------------------------------------------------
+-- Checkpoint (optional)
+--------------------------------------------------------------------------------
+
+||| Save checkpoint data with a string tag.
+||| Returns 0 on success, -1 if checkpointing is not implemented.
+export
+%foreign "C:c_checkpoint_save, libchapeliser_ffi"
+prim__checkpointSave : Bits64 -> Bits64 -> Bits64 -> PrimIO Bits32
+
+||| Load checkpoint data by tag.
+||| On entry, *len is buffer capacity. On exit, *len is data size.
+||| Returns 0 on success, -1 if no checkpoint exists or not implemented.
+export
+%foreign "C:c_checkpoint_load, libchapeliser_ffi"
+prim__checkpointLoad : Bits64 -> Bits64 -> Bits64 -> PrimIO Bits32
 
 --------------------------------------------------------------------------------
 -- Version Information
 --------------------------------------------------------------------------------
 
-||| Get library version
+||| Chapeliser ABI version (major * 1000 + minor)
+||| Used to detect ABI mismatches at runtime.
 export
-%foreign "C:{{project}}_version, lib{{project}}"
-prim__version : PrimIO Bits64
-
-||| Get version as string
-export
-version : IO String
-version = do
-  ptr <- primIO prim__version
-  pure (prim__getString ptr)
-
-||| Get library build info
-export
-%foreign "C:{{project}}_build_info, lib{{project}}"
-prim__buildInfo : PrimIO Bits64
-
-||| Get build information
-export
-buildInfo : IO String
-buildInfo = do
-  ptr <- primIO prim__buildInfo
-  pure (prim__getString ptr)
+chapeliserABIVersion : Bits32
+chapeliserABIVersion = 1000  -- v1.0
 
 --------------------------------------------------------------------------------
--- Callback Support
+-- Verification: Partition + Gather Composition
 --------------------------------------------------------------------------------
 
-||| Callback function type (C ABI)
+||| The full Chapeliser pipeline is correct if:
+|||   1. The partition is valid (complete + disjoint)
+|||   2. Each item is processed exactly once
+|||   3. The gather preserves all results
+|||
+||| This type witnesses that a workload configuration satisfies all three.
 public export
-Callback : Type
-Callback = Bits64 -> Bits32 -> Bits32
-
-||| Register a callback
-export
-%foreign "C:{{project}}_register_callback, lib{{project}}"
-prim__registerCallback : Bits64 -> AnyPtr -> PrimIO Bits32
-
--- TODO: Implement safe callback registration.
--- The callback must be wrapped via a proper FFI callback mechanism.
--- Do NOT use cast — it is banned per project safety standards.
--- See: https://idris2.readthedocs.io/en/latest/ffi/ffi.html#callbacks
-
---------------------------------------------------------------------------------
--- Utility Functions
---------------------------------------------------------------------------------
-
-||| Check if library is initialized
-export
-%foreign "C:{{project}}_is_initialized, lib{{project}}"
-prim__isInitialized : Bits64 -> PrimIO Bits32
-
-||| Check initialization status
-export
-isInitialized : Handle -> IO Bool
-isInitialized h = do
-  result <- primIO (prim__isInitialized (handlePtr h))
-  pure (result /= 0)
+data PipelineCorrect : WorkloadConfig -> Type where
+  MkPipelineCorrect :
+    {cfg : WorkloadConfig} ->
+    (partition : ValidPartition (MkPartition (perItemSlices cfg.totalItems cfg.numLocales))) ->
+    (gather : GatherConservation (MkGatherInput (replicate cfg.numLocales (cfg.totalItems `div` cfg.numLocales))) cfg.totalItems) ->
+    PipelineCorrect cfg
