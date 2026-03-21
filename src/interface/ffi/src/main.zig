@@ -1,251 +1,254 @@
-// {{PROJECT}} FFI Implementation
+// Chapeliser FFI Reference Implementation
 //
-// This module implements the C-compatible FFI declared in src/abi/Foreign.idr
-// All types and layouts must match the Idris2 ABI definitions.
+// This module provides a REFERENCE implementation of the Chapeliser FFI —
+// the 12 C-ABI functions that the generated Chapel code calls via extern proc.
+//
+// In production, users implement these functions in their own code (Rust, C, Zig).
+// This reference implementation is useful for:
+//   1. Testing the generated Chapel code without user code
+//   2. Documenting the expected behaviour of each function
+//   3. Providing a template users can copy and modify
+//
+// The generated Zig bridge (codegen/zig.rs output) delegates Chapel's c_* calls
+// to the user's workload-specific functions. This file implements those functions
+// for a trivial "echo" workload that copies input items to output unchanged.
 //
 // SPDX-License-Identifier: PMPL-1.0-or-later
 
 const std = @import("std");
 
-// Version information (keep in sync with project)
+// Version information
 const VERSION = "0.1.0";
-const BUILD_INFO = "{{PROJECT}} built with Zig " ++ @import("builtin").zig_version_string;
-
-/// Thread-local error storage
-threadlocal var last_error: ?[]const u8 = null;
-
-/// Set the last error message
-fn setError(msg: []const u8) void {
-    last_error = msg;
-}
-
-/// Clear the last error
-fn clearError() void {
-    last_error = null;
-}
+const BUILD_INFO = "chapeliser built with Zig " ++ @import("builtin").zig_version_string;
 
 //==============================================================================
-// Core Types (must match src/abi/Types.idr)
+// Result Codes (must match Chapeliser.ABI.Types.Result)
 //==============================================================================
 
-/// Result codes (must match Idris2 Result type)
 pub const Result = enum(c_int) {
     ok = 0,
-    @"error" = 1,
+    err = 1,
     invalid_param = 2,
     out_of_memory = 3,
     null_pointer = 4,
+    retry_exhausted = 5,
+    checkpoint_error = 6,
 };
 
-/// Library handle (opaque to prevent direct access)
-pub const Handle = opaque {
-    // Internal state hidden from C
+//==============================================================================
+// Reference Workload State
+//==============================================================================
+
+/// Simple reference state: stores items as byte buffers in memory.
+/// A real workload would load from files, databases, network, etc.
+const ReferenceState = struct {
+    initialized: bool = false,
+    items: std.ArrayList([]u8),
+    results: std.ArrayList([]u8),
     allocator: std.mem.Allocator,
-    initialized: bool,
-    // Add your fields here
+
+    fn init(allocator: std.mem.Allocator) ReferenceState {
+        return .{
+            .initialized = true,
+            .items = std.ArrayList([]u8).init(allocator),
+            .results = std.ArrayList([]u8).init(allocator),
+            .allocator = allocator,
+        };
+    }
+
+    fn deinit(self: *ReferenceState) void {
+        for (self.items.items) |item| self.allocator.free(item);
+        self.items.deinit();
+        for (self.results.items) |result| self.allocator.free(result);
+        self.results.deinit();
+        self.initialized = false;
+    }
 };
 
+var state: ?ReferenceState = null;
+
 //==============================================================================
-// Library Lifecycle
+// Lifecycle — called once on Chapel locale 0
 //==============================================================================
 
-/// Initialize the library
-/// Returns a handle, or null on failure
-export fn {{project}}_init() ?*Handle {
-    const allocator = std.heap.c_allocator;
-
-    const handle = allocator.create(Handle) catch {
-        setError("Failed to allocate handle");
-        return null;
-    };
-
-    // Initialize handle
-    handle.* = .{
-        .allocator = allocator,
-        .initialized = true,
-    };
-
-    clearError();
-    return handle;
+/// Initialise the reference workload. Returns 0 on success.
+export fn chapeliser_ref_init() callconv(.C) c_int {
+    if (state != null) return @intFromEnum(Result.err); // already initialised
+    state = ReferenceState.init(std.heap.c_allocator);
+    return @intFromEnum(Result.ok);
 }
 
-/// Free the library handle
-export fn {{project}}_free(handle: ?*Handle) void {
-    const h = handle orelse return;
-    const allocator = h.allocator;
-
-    // Clean up resources
-    h.initialized = false;
-
-    allocator.destroy(h);
-    clearError();
-}
-
-//==============================================================================
-// Core Operations
-//==============================================================================
-
-/// Process data (example operation)
-export fn {{project}}_process(handle: ?*Handle, input: u32) Result {
-    const h = handle orelse {
-        setError("Null handle");
-        return .null_pointer;
-    };
-
-    if (!h.initialized) {
-        setError("Handle not initialized");
-        return .@"error";
+/// Shut down the reference workload. Returns 0 on success.
+export fn chapeliser_ref_shutdown() callconv(.C) c_int {
+    if (state) |*s| {
+        s.deinit();
+        state = null;
+        return @intFromEnum(Result.ok);
     }
-
-    // Example processing logic
-    _ = input;
-
-    clearError();
-    return .ok;
+    return @intFromEnum(Result.err); // not initialised
 }
 
 //==============================================================================
-// String Operations
+// Data I/O — called on Chapel locale 0
 //==============================================================================
 
-/// Get a string result (example)
-/// Caller must free the returned string
-export fn {{project}}_get_string(handle: ?*Handle) ?[*:0]const u8 {
-    const h = handle orelse {
-        setError("Null handle");
-        return null;
-    };
-
-    if (!h.initialized) {
-        setError("Handle not initialized");
-        return null;
+/// Return the total number of input items.
+export fn chapeliser_ref_get_total_items() callconv(.C) c_int {
+    if (state) |s| {
+        return @intCast(s.items.items.len);
     }
-
-    // Example: allocate and return a string
-    const result = h.allocator.dupeZ(u8, "Example result") catch {
-        setError("Failed to allocate string");
-        return null;
-    };
-
-    clearError();
-    return result.ptr;
+    return 0;
 }
 
-/// Free a string allocated by the library
-export fn {{project}}_free_string(str: ?[*:0]const u8) void {
-    const s = str orelse return;
-    const allocator = std.heap.c_allocator;
+/// Serialise input item `idx` into `buf`. Set `*len` to bytes written.
+export fn chapeliser_ref_load_item(idx: c_int, buf: [*]u8, len: *usize) callconv(.C) c_int {
+    const s = &(state orelse return @intFromEnum(Result.err));
+    const i: usize = @intCast(idx);
+    if (i >= s.items.items.len) return @intFromEnum(Result.invalid_param);
 
-    const slice = std.mem.span(s);
-    allocator.free(slice);
+    const item = s.items.items[i];
+    if (item.len > len.*) return @intFromEnum(Result.out_of_memory);
+
+    @memcpy(buf[0..item.len], item);
+    len.* = item.len;
+    return @intFromEnum(Result.ok);
 }
 
-//==============================================================================
-// Array/Buffer Operations
-//==============================================================================
+/// Receive a processed result at index `idx`.
+export fn chapeliser_ref_store_result(idx: c_int, buf: [*]const u8, len: usize) callconv(.C) c_int {
+    const s = &(state orelse return @intFromEnum(Result.err));
 
-/// Process an array of data
-export fn {{project}}_process_array(
-    handle: ?*Handle,
-    buffer: ?[*]const u8,
-    len: u32,
-) Result {
-    const h = handle orelse {
-        setError("Null handle");
-        return .null_pointer;
-    };
+    // Copy the result data
+    const copy = s.allocator.alloc(u8, len) catch return @intFromEnum(Result.out_of_memory);
+    @memcpy(copy, buf[0..len]);
 
-    const buf = buffer orelse {
-        setError("Null buffer");
-        return .null_pointer;
-    };
-
-    if (!h.initialized) {
-        setError("Handle not initialized");
-        return .@"error";
+    // Store at the right index, growing if needed
+    const i: usize = @intCast(idx);
+    while (s.results.items.len <= i) {
+        s.results.append(&[_]u8{}) catch return @intFromEnum(Result.out_of_memory);
     }
+    // Free old result if any
+    if (s.results.items[i].len > 0) s.allocator.free(s.results.items[i]);
+    s.results.items[i] = copy;
 
-    // Access the buffer
-    const data = buf[0..len];
-    _ = data;
-
-    // Process data here
-
-    clearError();
-    return .ok;
+    return @intFromEnum(Result.ok);
 }
 
 //==============================================================================
-// Error Handling
+// Processing — called on any Chapel locale
 //==============================================================================
 
-/// Get the last error message
-/// Returns null if no error
-export fn {{project}}_last_error() ?[*:0]const u8 {
-    const err = last_error orelse return null;
+/// Process a single item: for the reference implementation, just echo it back.
+export fn chapeliser_ref_process_item(
+    in_buf: [*]const u8,
+    in_len: usize,
+    out_buf: [*]u8,
+    out_len: *usize,
+) callconv(.C) c_int {
+    // Echo: copy input to output unchanged
+    @memcpy(out_buf[0..in_len], in_buf[0..in_len]);
+    out_len.* = in_len;
+    return @intFromEnum(Result.ok);
+}
 
-    // Return C string (static storage, no need to free)
-    const allocator = std.heap.c_allocator;
-    const c_str = allocator.dupeZ(u8, err) catch return null;
-    return c_str.ptr;
+/// Process a chunk of items: for reference, process each individually.
+export fn chapeliser_ref_process_chunk(
+    items_buf: [*]const u8,
+    item_count: c_int,
+    item_offsets: [*]const c_int,
+    item_sizes: [*]const c_int,
+    out_buf: [*]u8,
+    out_len: *usize,
+) callconv(.C) c_int {
+    // For chunk processing, just concatenate all items as the "result"
+    var offset: usize = 0;
+    const count: usize = @intCast(item_count);
+    for (0..count) |i| {
+        const item_off: usize = @intCast(item_offsets[i]);
+        const item_sz: usize = @intCast(item_sizes[i]);
+        @memcpy(out_buf[offset .. offset + item_sz], items_buf[item_off .. item_off + item_sz]);
+        offset += item_sz;
+    }
+    out_len.* = offset;
+    return @intFromEnum(Result.ok);
 }
 
 //==============================================================================
-// Version Information
+// Reduction — for reduce/tree-reduce gather
 //==============================================================================
 
-/// Get the library version
-export fn {{project}}_version() [*:0]const u8 {
+/// Combine two results: for reference, concatenate them.
+export fn chapeliser_ref_reduce(
+    a_buf: [*]const u8,
+    a_len: usize,
+    b_buf: [*]const u8,
+    b_len: usize,
+    out_buf: [*]u8,
+    out_len: *usize,
+) callconv(.C) c_int {
+    @memcpy(out_buf[0..a_len], a_buf[0..a_len]);
+    @memcpy(out_buf[a_len .. a_len + b_len], b_buf[0..b_len]);
+    out_len.* = a_len + b_len;
+    return @intFromEnum(Result.ok);
+}
+
+//==============================================================================
+// Match Predicate — for 'first' gather
+//==============================================================================
+
+/// Check if a result matches: for reference, match if first byte is non-zero.
+export fn chapeliser_ref_is_match(buf: [*]const u8, len: usize) callconv(.C) c_int {
+    if (len == 0) return 0;
+    return if (buf[0] != 0) 1 else 0;
+}
+
+//==============================================================================
+// Key Hash — for keyed partition
+//==============================================================================
+
+/// Hash an item's key: for reference, use FNV-1a on the first 8 bytes.
+export fn chapeliser_ref_key_hash(buf: [*]const u8, len: usize) callconv(.C) c_uint {
+    const hash_len = @min(len, 8);
+    var h: u32 = 2166136261; // FNV offset basis
+    for (buf[0..hash_len]) |b| {
+        h ^= b;
+        h *%= 16777619; // FNV prime
+    }
+    return h;
+}
+
+//==============================================================================
+// Checkpoint — optional
+//==============================================================================
+
+/// Save checkpoint: reference implementation is a no-op.
+export fn chapeliser_ref_checkpoint_save(
+    _: [*]const u8,
+    _: usize,
+    _: [*:0]const u8,
+) callconv(.C) c_int {
+    return -1; // not implemented
+}
+
+/// Load checkpoint: reference implementation is a no-op.
+export fn chapeliser_ref_checkpoint_load(
+    _: [*]u8,
+    _: *usize,
+    _: [*:0]const u8,
+) callconv(.C) c_int {
+    return -1; // not implemented
+}
+
+//==============================================================================
+// Version
+//==============================================================================
+
+export fn chapeliser_ref_version() callconv(.C) [*:0]const u8 {
     return VERSION.ptr;
 }
 
-/// Get build information
-export fn {{project}}_build_info() [*:0]const u8 {
+export fn chapeliser_ref_build_info() callconv(.C) [*:0]const u8 {
     return BUILD_INFO.ptr;
-}
-
-//==============================================================================
-// Callback Support
-//==============================================================================
-
-/// Callback function type (C ABI)
-pub const Callback = *const fn (u64, u32) callconv(.C) u32;
-
-/// Register a callback
-export fn {{project}}_register_callback(
-    handle: ?*Handle,
-    callback: ?Callback,
-) Result {
-    const h = handle orelse {
-        setError("Null handle");
-        return .null_pointer;
-    };
-
-    const cb = callback orelse {
-        setError("Null callback");
-        return .null_pointer;
-    };
-
-    if (!h.initialized) {
-        setError("Handle not initialized");
-        return .@"error";
-    }
-
-    // Store callback for later use
-    _ = cb;
-
-    clearError();
-    return .ok;
-}
-
-//==============================================================================
-// Utility Functions
-//==============================================================================
-
-/// Check if handle is initialized
-export fn {{project}}_is_initialized(handle: ?*Handle) u32 {
-    const h = handle orelse return 0;
-    return if (h.initialized) 1 else 0;
 }
 
 //==============================================================================
@@ -253,22 +256,59 @@ export fn {{project}}_is_initialized(handle: ?*Handle) u32 {
 //==============================================================================
 
 test "lifecycle" {
-    const handle = {{project}}_init() orelse return error.InitFailed;
-    defer {{project}}_free(handle);
+    const rc_init = chapeliser_ref_init();
+    try std.testing.expectEqual(@as(c_int, 0), rc_init);
+    defer _ = chapeliser_ref_shutdown();
 
-    try std.testing.expect({{project}}_is_initialized(handle) == 1);
+    // Double init should fail
+    const rc_double = chapeliser_ref_init();
+    try std.testing.expectEqual(@as(c_int, 1), rc_double);
 }
 
-test "error handling" {
-    const result = {{project}}_process(null, 0);
-    try std.testing.expectEqual(Result.null_pointer, result);
+test "process_item echo" {
+    const input = "hello chapeliser";
+    var output: [256]u8 = undefined;
+    var out_len: usize = 0;
 
-    const err = {{project}}_last_error();
-    try std.testing.expect(err != null);
+    const rc = chapeliser_ref_process_item(input.ptr, input.len, &output, &out_len);
+    try std.testing.expectEqual(@as(c_int, 0), rc);
+    try std.testing.expectEqual(input.len, out_len);
+    try std.testing.expectEqualStrings(input, output[0..out_len]);
+}
+
+test "reduce concatenates" {
+    const a = "foo";
+    const b = "bar";
+    var output: [256]u8 = undefined;
+    var out_len: usize = 0;
+
+    const rc = chapeliser_ref_reduce(a.ptr, a.len, b.ptr, b.len, &output, &out_len);
+    try std.testing.expectEqual(@as(c_int, 0), rc);
+    try std.testing.expectEqualStrings("foobar", output[0..out_len]);
+}
+
+test "key_hash deterministic" {
+    const data = "testkey1";
+    const h1 = chapeliser_ref_key_hash(data.ptr, data.len);
+    const h2 = chapeliser_ref_key_hash(data.ptr, data.len);
+    try std.testing.expectEqual(h1, h2);
+}
+
+test "is_match" {
+    const yes = [_]u8{ 0x42, 0x00 };
+    const no = [_]u8{ 0x00, 0x42 };
+    try std.testing.expectEqual(@as(c_int, 1), chapeliser_ref_is_match(&yes, yes.len));
+    try std.testing.expectEqual(@as(c_int, 0), chapeliser_ref_is_match(&no, no.len));
+}
+
+test "checkpoint not implemented" {
+    var buf: [64]u8 = undefined;
+    var len: usize = buf.len;
+    try std.testing.expectEqual(@as(c_int, -1), chapeliser_ref_checkpoint_save(&buf, len, "test"));
+    try std.testing.expectEqual(@as(c_int, -1), chapeliser_ref_checkpoint_load(&buf, &len, "test"));
 }
 
 test "version" {
-    const ver = {{project}}_version();
-    const ver_str = std.mem.span(ver);
-    try std.testing.expectEqualStrings(VERSION, ver_str);
+    const ver = std.mem.span(chapeliser_ref_version());
+    try std.testing.expectEqualStrings("0.1.0", ver);
 }

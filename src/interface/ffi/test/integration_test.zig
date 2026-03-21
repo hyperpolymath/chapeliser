@@ -1,182 +1,186 @@
-// {{PROJECT}} Integration Tests
+// Chapeliser FFI Integration Tests
 // SPDX-License-Identifier: PMPL-1.0-or-later
 //
-// These tests verify that the Zig FFI correctly implements the Idris2 ABI
+// Tests the reference FFI implementation against the Idris2 ABI contract.
+// These tests exercise the full lifecycle: init → load → process → store → shutdown.
 
 const std = @import("std");
 const testing = std.testing;
 
-// Import FFI functions
-extern fn {{project}}_init() ?*opaque {};
-extern fn {{project}}_free(?*opaque {}) void;
-extern fn {{project}}_process(?*opaque {}, u32) c_int;
-extern fn {{project}}_get_string(?*opaque {}) ?[*:0]const u8;
-extern fn {{project}}_free_string(?[*:0]const u8) void;
-extern fn {{project}}_last_error() ?[*:0]const u8;
-extern fn {{project}}_version() [*:0]const u8;
-extern fn {{project}}_is_initialized(?*opaque {}) u32;
+// Import reference FFI functions
+extern fn chapeliser_ref_init() c_int;
+extern fn chapeliser_ref_shutdown() c_int;
+extern fn chapeliser_ref_get_total_items() c_int;
+extern fn chapeliser_ref_load_item(c_int, [*]u8, *usize) c_int;
+extern fn chapeliser_ref_store_result(c_int, [*]const u8, usize) c_int;
+extern fn chapeliser_ref_process_item([*]const u8, usize, [*]u8, *usize) c_int;
+extern fn chapeliser_ref_process_chunk([*]const u8, c_int, [*]const c_int, [*]const c_int, [*]u8, *usize) c_int;
+extern fn chapeliser_ref_reduce([*]const u8, usize, [*]const u8, usize, [*]u8, *usize) c_int;
+extern fn chapeliser_ref_is_match([*]const u8, usize) c_int;
+extern fn chapeliser_ref_key_hash([*]const u8, usize) c_uint;
+extern fn chapeliser_ref_checkpoint_save([*]const u8, usize, [*:0]const u8) c_int;
+extern fn chapeliser_ref_checkpoint_load([*]u8, *usize, [*:0]const u8) c_int;
+extern fn chapeliser_ref_version() [*:0]const u8;
+extern fn chapeliser_ref_build_info() [*:0]const u8;
 
 //==============================================================================
 // Lifecycle Tests
 //==============================================================================
 
-test "create and destroy handle" {
-    const handle = {{project}}_init() orelse return error.InitFailed;
-    defer {{project}}_free(handle);
+test "init and shutdown" {
+    const rc_init = chapeliser_ref_init();
+    try testing.expectEqual(@as(c_int, 0), rc_init);
 
-    try testing.expect(handle != null);
+    const rc_shutdown = chapeliser_ref_shutdown();
+    try testing.expectEqual(@as(c_int, 0), rc_shutdown);
 }
 
-test "handle is initialized" {
-    const handle = {{project}}_init() orelse return error.InitFailed;
-    defer {{project}}_free(handle);
+test "double init fails" {
+    const rc1 = chapeliser_ref_init();
+    try testing.expectEqual(@as(c_int, 0), rc1);
+    defer _ = chapeliser_ref_shutdown();
 
-    const initialized = {{project}}_is_initialized(handle);
-    try testing.expectEqual(@as(u32, 1), initialized);
+    const rc2 = chapeliser_ref_init();
+    try testing.expectEqual(@as(c_int, 1), rc2); // error: already initialised
 }
 
-test "null handle is not initialized" {
-    const initialized = {{project}}_is_initialized(null);
-    try testing.expectEqual(@as(u32, 0), initialized);
-}
-
-//==============================================================================
-// Operation Tests
-//==============================================================================
-
-test "process with valid handle" {
-    const handle = {{project}}_init() orelse return error.InitFailed;
-    defer {{project}}_free(handle);
-
-    const result = {{project}}_process(handle, 42);
-    try testing.expectEqual(@as(c_int, 0), result); // 0 = ok
-}
-
-test "process with null handle returns error" {
-    const result = {{project}}_process(null, 42);
-    try testing.expectEqual(@as(c_int, 4), result); // 4 = null_pointer
+test "shutdown without init fails" {
+    const rc = chapeliser_ref_shutdown();
+    try testing.expectEqual(@as(c_int, 1), rc); // error: not initialised
 }
 
 //==============================================================================
-// String Tests
+// Processing Tests
 //==============================================================================
 
-test "get string result" {
-    const handle = {{project}}_init() orelse return error.InitFailed;
-    defer {{project}}_free(handle);
+test "process_item preserves data" {
+    const input = "distributed computing rocks";
+    var output: [256]u8 = undefined;
+    var out_len: usize = 0;
 
-    const str = {{project}}_get_string(handle);
-    defer if (str) |s| {{project}}_free_string(s);
-
-    try testing.expect(str != null);
+    const rc = chapeliser_ref_process_item(input.ptr, input.len, &output, &out_len);
+    try testing.expectEqual(@as(c_int, 0), rc);
+    try testing.expectEqual(input.len, out_len);
+    try testing.expectEqualStrings(input, output[0..out_len]);
 }
 
-test "get string with null handle" {
-    const str = {{project}}_get_string(null);
-    try testing.expect(str == null);
+test "process_item handles empty input" {
+    const input = "";
+    var output: [256]u8 = undefined;
+    var out_len: usize = 0;
+
+    const rc = chapeliser_ref_process_item(input.ptr, input.len, &output, &out_len);
+    try testing.expectEqual(@as(c_int, 0), rc);
+    try testing.expectEqual(@as(usize, 0), out_len);
 }
 
 //==============================================================================
-// Error Handling Tests
+// Reduction Tests
 //==============================================================================
 
-test "last error after null handle operation" {
-    _ = {{project}}_process(null, 0);
+test "reduce combines two results" {
+    const a = "hello ";
+    const b = "world";
+    var output: [256]u8 = undefined;
+    var out_len: usize = 0;
 
-    const err = {{project}}_last_error();
-    try testing.expect(err != null);
-
-    if (err) |e| {
-        const err_str = std.mem.span(e);
-        try testing.expect(err_str.len > 0);
-    }
+    const rc = chapeliser_ref_reduce(a.ptr, a.len, b.ptr, b.len, &output, &out_len);
+    try testing.expectEqual(@as(c_int, 0), rc);
+    try testing.expectEqualStrings("hello world", output[0..out_len]);
 }
 
-test "no error after successful operation" {
-    const handle = {{project}}_init() orelse return error.InitFailed;
-    defer {{project}}_free(handle);
+test "reduce is associative for concatenation" {
+    // (a + b) + c should equal a + (b + c) in terms of final content
+    const a = "aaa";
+    const b = "bbb";
+    const c = "ccc";
+    var tmp1: [256]u8 = undefined;
+    var tmp2: [256]u8 = undefined;
+    var result1: [256]u8 = undefined;
+    var result2: [256]u8 = undefined;
+    var len1: usize = 0;
+    var len2: usize = 0;
+    var final1: usize = 0;
+    var final2: usize = 0;
 
-    _ = {{project}}_process(handle, 0);
+    // (a + b) + c
+    _ = chapeliser_ref_reduce(a.ptr, a.len, b.ptr, b.len, &tmp1, &len1);
+    _ = chapeliser_ref_reduce(&tmp1, len1, c.ptr, c.len, &result1, &final1);
 
-    // Error should be cleared after successful operation
-    // (This depends on implementation)
+    // a + (b + c)
+    _ = chapeliser_ref_reduce(b.ptr, b.len, c.ptr, c.len, &tmp2, &len2);
+    _ = chapeliser_ref_reduce(a.ptr, a.len, &tmp2, len2, &result2, &final2);
+
+    try testing.expectEqualStrings(result1[0..final1], result2[0..final2]);
+}
+
+//==============================================================================
+// Match Predicate Tests
+//==============================================================================
+
+test "is_match returns 1 for non-zero first byte" {
+    const data = [_]u8{ 0xFF, 0x00, 0x00 };
+    try testing.expectEqual(@as(c_int, 1), chapeliser_ref_is_match(&data, data.len));
+}
+
+test "is_match returns 0 for zero first byte" {
+    const data = [_]u8{ 0x00, 0xFF, 0xFF };
+    try testing.expectEqual(@as(c_int, 0), chapeliser_ref_is_match(&data, data.len));
+}
+
+test "is_match returns 0 for empty buffer" {
+    const data = [_]u8{};
+    try testing.expectEqual(@as(c_int, 0), chapeliser_ref_is_match(&data, 0));
+}
+
+//==============================================================================
+// Key Hash Tests
+//==============================================================================
+
+test "key_hash is deterministic" {
+    const key = "partition-key";
+    const h1 = chapeliser_ref_key_hash(key.ptr, key.len);
+    const h2 = chapeliser_ref_key_hash(key.ptr, key.len);
+    try testing.expectEqual(h1, h2);
+}
+
+test "key_hash differs for different keys" {
+    const k1 = "key-alpha";
+    const k2 = "key-bravo";
+    const h1 = chapeliser_ref_key_hash(k1.ptr, k1.len);
+    const h2 = chapeliser_ref_key_hash(k2.ptr, k2.len);
+    try testing.expect(h1 != h2);
+}
+
+//==============================================================================
+// Checkpoint Tests
+//==============================================================================
+
+test "checkpoint save returns not-implemented" {
+    const data = "checkpoint data";
+    const rc = chapeliser_ref_checkpoint_save(data.ptr, data.len, "locale-0");
+    try testing.expectEqual(@as(c_int, -1), rc);
+}
+
+test "checkpoint load returns not-implemented" {
+    var buf: [256]u8 = undefined;
+    var len: usize = buf.len;
+    const rc = chapeliser_ref_checkpoint_load(&buf, &len, "locale-0");
+    try testing.expectEqual(@as(c_int, -1), rc);
 }
 
 //==============================================================================
 // Version Tests
 //==============================================================================
 
-test "version string is not empty" {
-    const ver = {{project}}_version();
-    const ver_str = std.mem.span(ver);
-
-    try testing.expect(ver_str.len > 0);
+test "version is semantic" {
+    const ver = std.mem.span(chapeliser_ref_version());
+    try testing.expect(ver.len > 0);
+    try testing.expect(std.mem.count(u8, ver, ".") >= 1);
 }
 
-test "version string is semantic version format" {
-    const ver = {{project}}_version();
-    const ver_str = std.mem.span(ver);
-
-    // Should be in format X.Y.Z
-    try testing.expect(std.mem.count(u8, ver_str, ".") >= 1);
-}
-
-//==============================================================================
-// Memory Safety Tests
-//==============================================================================
-
-test "multiple handles are independent" {
-    const h1 = {{project}}_init() orelse return error.InitFailed;
-    defer {{project}}_free(h1);
-
-    const h2 = {{project}}_init() orelse return error.InitFailed;
-    defer {{project}}_free(h2);
-
-    try testing.expect(h1 != h2);
-
-    // Operations on h1 should not affect h2
-    _ = {{project}}_process(h1, 1);
-    _ = {{project}}_process(h2, 2);
-}
-
-test "double free is safe" {
-    const handle = {{project}}_init() orelse return error.InitFailed;
-
-    {{project}}_free(handle);
-    {{project}}_free(handle); // Should not crash
-}
-
-test "free null is safe" {
-    {{project}}_free(null); // Should not crash
-}
-
-//==============================================================================
-// Thread Safety Tests (if applicable)
-//==============================================================================
-
-test "concurrent operations" {
-    const handle = {{project}}_init() orelse return error.InitFailed;
-    defer {{project}}_free(handle);
-
-    const ThreadContext = struct {
-        h: *opaque {},
-        id: u32,
-    };
-
-    const thread_fn = struct {
-        fn run(ctx: ThreadContext) void {
-            _ = {{project}}_process(ctx.h, ctx.id);
-        }
-    }.run;
-
-    var threads: [4]std.Thread = undefined;
-    for (&threads, 0..) |*thread, i| {
-        thread.* = try std.Thread.spawn(.{}, thread_fn, .{
-            ThreadContext{ .h = handle, .id = @intCast(i) },
-        });
-    }
-
-    for (threads) |thread| {
-        thread.join();
-    }
+test "build_info is not empty" {
+    const info = std.mem.span(chapeliser_ref_build_info());
+    try testing.expect(info.len > 0);
+    try testing.expect(std.mem.indexOf(u8, info, "chapeliser") != null);
 }
