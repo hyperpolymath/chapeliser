@@ -4,7 +4,7 @@
 // Manifest parser and validator for chapeliser.toml.
 // The manifest describes a workload to be distributed across Chapel locales.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 use std::path::Path;
 
@@ -93,7 +93,10 @@ pub struct ResilienceConfig {
     #[serde(default)]
     pub checkpoint: bool,
     /// Checkpoint interval in seconds (if checkpointing is enabled).
-    #[serde(rename = "checkpoint-interval-secs", default = "default_checkpoint_interval")]
+    #[serde(
+        rename = "checkpoint-interval-secs",
+        default = "default_checkpoint_interval"
+    )]
     pub checkpoint_interval_secs: u64,
     /// Whether to redistribute work from failed nodes to surviving ones.
     #[serde(default = "default_true")]
@@ -116,13 +119,27 @@ pub struct ChapelConfig {
 
 // -- Default value functions --
 
-fn default_serialization() -> String { "bincode".to_string() }
-fn default_min_nodes() -> u32 { 1 }
-fn default_max_nodes() -> u32 { 64 }
-fn default_grain_size() -> u32 { 50 }
-fn default_retries() -> u32 { 3 }
-fn default_checkpoint_interval() -> u64 { 300 }
-fn default_true() -> bool { true }
+fn default_serialization() -> String {
+    "bincode".to_string()
+}
+fn default_min_nodes() -> u32 {
+    1
+}
+fn default_max_nodes() -> u32 {
+    64
+}
+fn default_grain_size() -> u32 {
+    50
+}
+fn default_retries() -> u32 {
+    3
+}
+fn default_checkpoint_interval() -> u64 {
+    300
+}
+fn default_true() -> bool {
+    true
+}
 
 impl Default for ResilienceConfig {
     fn default() -> Self {
@@ -139,8 +156,8 @@ impl Default for ResilienceConfig {
 pub fn load_manifest(path: &str) -> Result<Manifest> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Failed to read manifest: {}", path))?;
-    let manifest: Manifest = toml::from_str(&content)
-        .with_context(|| format!("Failed to parse manifest: {}", path))?;
+    let manifest: Manifest =
+        toml::from_str(&content).with_context(|| format!("Failed to parse manifest: {}", path))?;
     Ok(manifest)
 }
 
@@ -168,7 +185,14 @@ pub fn validate(manifest: &Manifest) -> Result<()> {
     }
 
     // Validate serialization format
-    let valid_serialization = ["bincode", "messagepack", "cbor", "json", "flatbuffers", "raw"];
+    let valid_serialization = [
+        "bincode",
+        "messagepack",
+        "cbor",
+        "json",
+        "flatbuffers",
+        "raw",
+    ];
     if !valid_serialization.contains(&manifest.data.serialization.as_str()) {
         bail!(
             "Unknown serialization format '{}'. Valid: {:?}",
@@ -221,7 +245,10 @@ pub fn validate(manifest: &Manifest) -> Result<()> {
 pub fn init_manifest(path: &str) -> Result<()> {
     let manifest_path = Path::new(path).join("chapeliser.toml");
     if manifest_path.exists() {
-        bail!("chapeliser.toml already exists at {}", manifest_path.display());
+        bail!(
+            "chapeliser.toml already exists at {}",
+            manifest_path.display()
+        );
     }
 
     let template = r#"# Chapeliser manifest — describes a workload for Chapel distribution.
@@ -273,21 +300,27 @@ pub fn print_info(manifest: &Manifest) {
     println!("Output type:   {}", manifest.data.output_type);
     println!("Serialization: {}", manifest.data.serialization);
     println!();
-    println!("Scaling:       {}-{} nodes, grain size {}",
-        manifest.scaling.min_nodes, manifest.scaling.max_nodes, manifest.scaling.grain_size);
+    println!(
+        "Scaling:       {}-{} nodes, grain size {}",
+        manifest.scaling.min_nodes, manifest.scaling.max_nodes, manifest.scaling.grain_size
+    );
 
     if let Some(expected) = manifest.scaling.expected_items {
         let tasks = expected / manifest.scaling.grain_size as u64;
         let ideal_nodes = tasks.min(manifest.scaling.max_nodes as u64);
-        println!("Expected:      {} items → ~{} tasks → ideal {} nodes",
-            expected, tasks, ideal_nodes);
+        println!(
+            "Expected:      {} items → ~{} tasks → ideal {} nodes",
+            expected, tasks, ideal_nodes
+        );
     }
 
     println!();
-    println!("Resilience:    {} retries, checkpoint={}, redistribute={}",
+    println!(
+        "Resilience:    {} retries, checkpoint={}, redistribute={}",
         manifest.resilience.retries,
         manifest.resilience.checkpoint,
-        manifest.resilience.redistribute_on_failure);
+        manifest.resilience.redistribute_on_failure
+    );
 }
 
 /// Print available partition and gather strategies.

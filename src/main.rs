@@ -1,3 +1,10 @@
+#![allow(
+    dead_code,
+    clippy::too_many_arguments,
+    clippy::manual_strip,
+    clippy::if_same_then_else,
+    clippy::vec_init_then_push
+)]
 #![forbid(unsafe_code)]
 // SPDX-License-Identifier: PMPL-1.0-or-later
 // Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
@@ -110,20 +117,30 @@ fn main() -> Result<()> {
         Commands::Validate { manifest } => {
             let m = manifest::load_manifest(&manifest)?;
             manifest::validate(&m)?;
-            println!("Manifest valid: workload '{}', partition={}, gather={}",
-                m.workload.name, m.workload.partition, m.workload.gather);
+            println!(
+                "Manifest valid: workload '{}', partition={}, gather={}",
+                m.workload.name, m.workload.partition, m.workload.gather
+            );
         }
         Commands::Generate { manifest, output } => {
             let m = manifest::load_manifest(&manifest)?;
             manifest::validate(&m)?;
             codegen::generate_all(&m, &output)?;
-            println!("Generated Chapel wrapper, Zig FFI bridge, and C headers in: {}", output);
+            println!(
+                "Generated Chapel wrapper, Zig FFI bridge, and C headers in: {}",
+                output
+            );
         }
         Commands::Build { manifest, release } => {
             let m = manifest::load_manifest(&manifest)?;
             codegen::build(&m, release)?;
         }
-        Commands::Run { manifest, locales, cluster, args } => {
+        Commands::Run {
+            manifest,
+            locales,
+            cluster,
+            args,
+        } => {
             let m = manifest::load_manifest(&manifest)?;
             codegen::run(&m, locales, cluster.as_deref(), &args)?;
         }

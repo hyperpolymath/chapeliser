@@ -52,6 +52,7 @@ pub enum PartitionStrategy {
 
 impl PartitionStrategy {
     /// Parse from manifest string
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "per-item" => Some(Self::PerItem),
@@ -81,6 +82,7 @@ pub enum GatherStrategy {
 
 impl GatherStrategy {
     /// Parse from manifest string
+    #[allow(clippy::should_implement_trait)]
     pub fn from_str(s: &str) -> Option<Self> {
         match s {
             "merge" => Some(Self::Merge),
@@ -131,7 +133,10 @@ impl Partition {
         let mut offset = 0u64;
         for i in 0..k {
             let count = base + if i < remainder { 1 } else { 0 };
-            slices.push(Slice { start: offset, count });
+            slices.push(Slice {
+                start: offset,
+                count,
+            });
             offset += count;
         }
 
@@ -146,14 +151,13 @@ impl Partition {
     /// Create a chunked partition: items grouped into chunks of `grain_size`.
     pub fn chunked(total_items: u64, num_locales: u32, grain_size: u32) -> Self {
         let g = grain_size as u64;
-        let num_chunks = (total_items + g - 1) / g;
-        let chunks_per_locale = (num_chunks + num_locales as u64 - 1) / num_locales as u64;
+        let num_chunks = total_items.div_ceil(g);
+        let chunks_per_locale = num_chunks.div_ceil(num_locales as u64);
 
         let mut slices = Vec::with_capacity(num_locales as usize);
         let mut offset = 0u64;
         for _ in 0..num_locales {
-            let items_this_locale =
-                (chunks_per_locale * g).min(total_items.saturating_sub(offset));
+            let items_this_locale = (chunks_per_locale * g).min(total_items.saturating_sub(offset));
             slices.push(Slice {
                 start: offset,
                 count: items_this_locale,
@@ -254,7 +258,7 @@ impl MemoryBudget {
         let output_bytes = items_per_locale * max_item_bytes;
         let metadata_bytes = items_per_locale * 9; // 8 bytes size_t + 1 byte bool
         let total_bytes = input_bytes + output_bytes + metadata_bytes;
-        let total_mb = (total_bytes + 1_048_575) / 1_048_576;
+        let total_mb = total_bytes.div_ceil(1_048_576);
 
         Self {
             items_per_locale,
@@ -319,8 +323,14 @@ mod tests {
 
     #[test]
     fn partition_strategy_parsing() {
-        assert_eq!(PartitionStrategy::from_str("per-item"), Some(PartitionStrategy::PerItem));
-        assert_eq!(PartitionStrategy::from_str("adaptive"), Some(PartitionStrategy::Adaptive));
+        assert_eq!(
+            PartitionStrategy::from_str("per-item"),
+            Some(PartitionStrategy::PerItem)
+        );
+        assert_eq!(
+            PartitionStrategy::from_str("adaptive"),
+            Some(PartitionStrategy::Adaptive)
+        );
         assert_eq!(PartitionStrategy::from_str("invalid"), None);
     }
 
@@ -387,7 +397,10 @@ mod tests {
     #[test]
     fn chunked_partition_large_grain() {
         let p = Partition::chunked(5, 4, 100);
-        assert!(p.verify(), "Chunked partition with large grain should be valid");
+        assert!(
+            p.verify(),
+            "Chunked partition with large grain should be valid"
+        );
         // All items in one chunk on one locale
         let total: u64 = p.slices.iter().map(|s| s.count).sum();
         assert_eq!(total, 5);
@@ -459,12 +472,20 @@ mod tests {
     #[test]
     fn memory_budget_zero_item_bytes() {
         let budget = MemoryBudget::calculate(100, 4, 0);
-        assert_eq!(budget.input_bytes, 0, "0 max_item_bytes means 0 input buffer");
-        assert_eq!(budget.output_bytes, 0, "0 max_item_bytes means 0 output buffer");
-        assert!(budget.metadata_bytes > 0, "Metadata bytes should still be non-zero");
         assert_eq!(
-            budget.total_bytes,
-            budget.metadata_bytes,
+            budget.input_bytes, 0,
+            "0 max_item_bytes means 0 input buffer"
+        );
+        assert_eq!(
+            budget.output_bytes, 0,
+            "0 max_item_bytes means 0 output buffer"
+        );
+        assert!(
+            budget.metadata_bytes > 0,
+            "Metadata bytes should still be non-zero"
+        );
+        assert_eq!(
+            budget.total_bytes, budget.metadata_bytes,
             "Total should be metadata only"
         );
     }
@@ -548,8 +569,16 @@ mod tests {
     fn strategy_parsing_rejects_invalid() {
         let invalids = ["", "MERGE", "per_item", "Per-Item", "tree_reduce", " merge"];
         for s in &invalids {
-            assert_eq!(PartitionStrategy::from_str(s), None, "Partition should reject '{s}'");
-            assert_eq!(GatherStrategy::from_str(s), None, "Gather should reject '{s}'");
+            assert_eq!(
+                PartitionStrategy::from_str(s),
+                None,
+                "Partition should reject '{s}'"
+            );
+            assert_eq!(
+                GatherStrategy::from_str(s),
+                None,
+                "Gather should reject '{s}'"
+            );
         }
     }
 }

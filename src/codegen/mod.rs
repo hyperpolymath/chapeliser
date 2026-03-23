@@ -30,12 +30,9 @@ use crate::manifest::Manifest;
 /// and build script. Writes output to the specified directory.
 pub fn generate_all(manifest: &Manifest, output_dir: &str) -> Result<()> {
     let out = Path::new(output_dir);
-    fs::create_dir_all(out.join("chapel"))
-        .context("Failed to create chapel output directory")?;
-    fs::create_dir_all(out.join("zig"))
-        .context("Failed to create zig output directory")?;
-    fs::create_dir_all(out.join("include"))
-        .context("Failed to create include output directory")?;
+    fs::create_dir_all(out.join("chapel")).context("Failed to create chapel output directory")?;
+    fs::create_dir_all(out.join("zig")).context("Failed to create zig output directory")?;
+    fs::create_dir_all(out.join("include")).context("Failed to create include output directory")?;
 
     chapel::generate(manifest, &out.join("chapel"))?;
     zig::generate(manifest, &out.join("zig"))?;
@@ -72,8 +69,7 @@ pub fn build(manifest: &Manifest, release: bool) -> Result<()> {
     // Run the generated build script, passing release mode via env var
     let build_dir = Path::new("generated/chapeliser");
     let mut cmd = std::process::Command::new("bash");
-    cmd.arg(build_dir.join("build.sh"))
-        .current_dir(build_dir);
+    cmd.arg(build_dir.join("build.sh")).current_dir(build_dir);
 
     // Pass --fast (release) or --no-optimize (debug) to Chapel via CHPL_FLAGS
     if release {
@@ -152,9 +148,7 @@ pub fn run(
 
         // Set SSH_SERVERS — comma-separated list of hostnames
         if let Some(servers) = cluster.get("servers").and_then(|v| v.as_array()) {
-            let hosts: Vec<&str> = servers.iter()
-                .filter_map(|v| v.as_str())
-                .collect();
+            let hosts: Vec<&str> = servers.iter().filter_map(|v| v.as_str()).collect();
             let hosts_str = hosts.join(",");
             cmd.env("SSH_SERVERS", &hosts_str);
             println!("  SSH_SERVERS={}", hosts_str);
@@ -166,7 +160,10 @@ pub fn run(
         }
 
         // Optional: CHPL_RT_NUM_THREADS_PER_LOCALE
-        if let Some(threads) = cluster.get("threads-per-locale").and_then(|v| v.as_integer()) {
+        if let Some(threads) = cluster
+            .get("threads-per-locale")
+            .and_then(|v| v.as_integer())
+        {
             cmd.env("CHPL_RT_NUM_THREADS_PER_LOCALE", threads.to_string());
             println!("  Threads per locale: {}", threads);
         }
@@ -176,9 +173,7 @@ pub fn run(
         cmd.arg(arg);
     }
 
-    let status = cmd
-        .status()
-        .context("Failed to execute Chapel binary")?;
+    let status = cmd.status().context("Failed to execute Chapel binary")?;
 
     if !status.success() {
         anyhow::bail!("Workload exited with code: {:?}", status.code());

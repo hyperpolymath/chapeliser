@@ -49,17 +49,14 @@ fn parse_manifest(toml_str: &str) -> chapeliser::manifest::Manifest {
 
 /// Generate all artifacts into a tempdir and return the tempdir handle plus
 /// the safe_name (hyphens replaced with underscores) for path construction.
-fn generate_to_tempdir(
-    m: &chapeliser::manifest::Manifest,
-) -> (tempfile::TempDir, String) {
+fn generate_to_tempdir(m: &chapeliser::manifest::Manifest) -> (tempfile::TempDir, String) {
     let dir = tempfile::tempdir().unwrap();
-    chapeliser::codegen::generate_all(m, dir.path().to_str().unwrap())
-        .unwrap_or_else(|e| {
-            panic!(
-                "generate_all failed for workload '{}': {e}",
-                m.workload.name
-            )
-        });
+    chapeliser::codegen::generate_all(m, dir.path().to_str().unwrap()).unwrap_or_else(|e| {
+        panic!(
+            "generate_all failed for workload '{}': {e}",
+            m.workload.name
+        )
+    });
     let safe_name = m.workload.name.replace('-', "_");
     (dir, safe_name)
 }
@@ -108,28 +105,70 @@ fn test_generate_produces_files() {
 
     // Check Chapel file contains expected content
     let chpl = fs::read_to_string(output.join("chapel/mass_panic_distributed.chpl")).unwrap();
-    assert!(chpl.contains("coforall"), "Chapel should contain coforall distribution");
-    assert!(chpl.contains("mass_panic"), "Chapel should reference workload name");
-    assert!(chpl.contains("c_process_item"), "Chapel should call c_process_item");
-    assert!(chpl.contains("c_init"), "Chapel should call c_init for lifecycle");
-    assert!(chpl.contains("c_load_item"), "Chapel should call c_load_item for data I/O");
-    assert!(chpl.contains("c_store_result"), "Chapel should call c_store_result");
-    assert!(chpl.contains("processWithRetry"), "Chapel should have retry logic");
+    assert!(
+        chpl.contains("coforall"),
+        "Chapel should contain coforall distribution"
+    );
+    assert!(
+        chpl.contains("mass_panic"),
+        "Chapel should reference workload name"
+    );
+    assert!(
+        chpl.contains("c_process_item"),
+        "Chapel should call c_process_item"
+    );
+    assert!(
+        chpl.contains("c_init"),
+        "Chapel should call c_init for lifecycle"
+    );
+    assert!(
+        chpl.contains("c_load_item"),
+        "Chapel should call c_load_item for data I/O"
+    );
+    assert!(
+        chpl.contains("c_store_result"),
+        "Chapel should call c_store_result"
+    );
+    assert!(
+        chpl.contains("processWithRetry"),
+        "Chapel should have retry logic"
+    );
 
     // Check Zig file contains expected exports
     let zig = fs::read_to_string(output.join("zig/mass_panic_ffi.zig")).unwrap();
-    assert!(zig.contains("export fn c_process_item"), "Zig should export c_process_item");
-    assert!(zig.contains("mass_panic_process_item"), "Zig should delegate to user's mass_panic_process_item");
+    assert!(
+        zig.contains("export fn c_process_item"),
+        "Zig should export c_process_item"
+    );
+    assert!(
+        zig.contains("mass_panic_process_item"),
+        "Zig should delegate to user's mass_panic_process_item"
+    );
     assert!(zig.contains("export fn c_init"), "Zig should export c_init");
-    assert!(zig.contains("export fn c_load_item"), "Zig should export c_load_item");
+    assert!(
+        zig.contains("export fn c_load_item"),
+        "Zig should export c_load_item"
+    );
 
     // Check C header contains guards and function declarations
     let h = fs::read_to_string(output.join("include/mass_panic_chapeliser.h")).unwrap();
-    assert!(h.contains("#ifndef CHAPELISER_MASS_PANIC_H"), "Header should have include guard");
-    assert!(h.contains("mass_panic_process_item"), "Header should declare process_item");
+    assert!(
+        h.contains("#ifndef CHAPELISER_MASS_PANIC_H"),
+        "Header should have include guard"
+    );
+    assert!(
+        h.contains("mass_panic_process_item"),
+        "Header should declare process_item"
+    );
     assert!(h.contains("mass_panic_init"), "Header should declare init");
-    assert!(h.contains("mass_panic_load_item"), "Header should declare load_item");
-    assert!(h.contains("mass_panic_store_result"), "Header should declare store_result");
+    assert!(
+        h.contains("mass_panic_load_item"),
+        "Header should declare load_item"
+    );
+    assert!(
+        h.contains("mass_panic_store_result"),
+        "Header should declare store_result"
+    );
 }
 
 #[test]
@@ -154,7 +193,12 @@ fn test_validate_rejects_bad_partition() {
     let m: chapeliser::manifest::Manifest = toml::from_str(toml).unwrap();
     let result = chapeliser::manifest::validate(&m);
     assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("Unknown partition strategy"));
+    assert!(
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown partition strategy")
+    );
 }
 
 #[test]
@@ -162,7 +206,8 @@ fn test_all_partition_strategies_generate() {
     let strategies = ["per-item", "chunk", "adaptive", "spatial", "keyed"];
 
     for strategy in &strategies {
-        let toml_str = format!(r#"
+        let toml_str = format!(
+            r#"
         [workload]
         name = "test-{strategy}"
         entry = "src/lib.rs::func"
@@ -177,7 +222,8 @@ fn test_all_partition_strategies_generate() {
         min-nodes = 1
         max-nodes = 4
         grain-size = 10
-        "#);
+        "#
+        );
 
         let m: chapeliser::manifest::Manifest = toml::from_str(&toml_str).unwrap();
         chapeliser::manifest::validate(&m).unwrap();
@@ -187,17 +233,41 @@ fn test_all_partition_strategies_generate() {
             .unwrap_or_else(|e| panic!("Failed to generate for strategy {strategy}: {e}"));
 
         let safe_name = format!("test_{}", strategy.replace('-', "_"));
-        let chpl_path = dir.path().join(format!("chapel/{safe_name}_distributed.chpl"));
-        assert!(chpl_path.exists(), "Chapel file missing for strategy {strategy}: expected {}", chpl_path.display());
+        let chpl_path = dir
+            .path()
+            .join(format!("chapel/{safe_name}_distributed.chpl"));
+        assert!(
+            chpl_path.exists(),
+            "Chapel file missing for strategy {strategy}: expected {}",
+            chpl_path.display()
+        );
 
         // Verify generated Chapel is non-trivial and contains distribution logic
         let chpl = fs::read_to_string(&chpl_path).unwrap();
-        assert!(chpl.contains("c_init"), "Chapel {strategy} should call c_init");
-        assert!(chpl.contains("c_load_item"), "Chapel {strategy} should load items");
-        assert!(chpl.contains("c_process_item"), "Chapel {strategy} should process items");
-        assert!(chpl.contains("processWithRetry"), "Chapel {strategy} should have retry logic");
-        assert!(chpl.contains("c_store_result"), "Chapel {strategy} should store results");
-        assert!(chpl.contains("c_shutdown"), "Chapel {strategy} should call shutdown");
+        assert!(
+            chpl.contains("c_init"),
+            "Chapel {strategy} should call c_init"
+        );
+        assert!(
+            chpl.contains("c_load_item"),
+            "Chapel {strategy} should load items"
+        );
+        assert!(
+            chpl.contains("c_process_item"),
+            "Chapel {strategy} should process items"
+        );
+        assert!(
+            chpl.contains("processWithRetry"),
+            "Chapel {strategy} should have retry logic"
+        );
+        assert!(
+            chpl.contains("c_store_result"),
+            "Chapel {strategy} should store results"
+        );
+        assert!(
+            chpl.contains("c_shutdown"),
+            "Chapel {strategy} should call shutdown"
+        );
     }
 }
 
@@ -206,7 +276,8 @@ fn test_all_gather_strategies_generate() {
     let gathers = ["merge", "reduce", "tree-reduce", "stream", "first"];
 
     for gather in &gathers {
-        let toml_str = format!(r#"
+        let toml_str = format!(
+            r#"
         [workload]
         name = "test-{gather}"
         entry = "src/lib.rs::func"
@@ -221,7 +292,8 @@ fn test_all_gather_strategies_generate() {
         min-nodes = 1
         max-nodes = 4
         grain-size = 10
-        "#);
+        "#
+        );
 
         let m: chapeliser::manifest::Manifest = toml::from_str(&toml_str).unwrap();
         chapeliser::manifest::validate(&m).unwrap();
@@ -231,16 +303,27 @@ fn test_all_gather_strategies_generate() {
             .unwrap_or_else(|e| panic!("Failed to generate for gather {gather}: {e}"));
 
         let safe_name = format!("test_{}", gather.replace('-', "_"));
-        let chpl_path = dir.path().join(format!("chapel/{safe_name}_distributed.chpl"));
+        let chpl_path = dir
+            .path()
+            .join(format!("chapel/{safe_name}_distributed.chpl"));
         let chpl = fs::read_to_string(&chpl_path).unwrap();
 
         // Each gather strategy should produce strategy-specific output
         match *gather {
             "merge" => assert!(chpl.contains("merge"), "merge gather should mention merge"),
-            "reduce" => assert!(chpl.contains("c_reduce"), "reduce gather should call c_reduce"),
+            "reduce" => assert!(
+                chpl.contains("c_reduce"),
+                "reduce gather should call c_reduce"
+            ),
             "tree-reduce" => assert!(chpl.contains("tree"), "tree-reduce should mention tree"),
-            "stream" => assert!(chpl.contains("Stream"), "stream gather should mention stream"),
-            "first" => assert!(chpl.contains("c_is_match"), "first gather should call c_is_match"),
+            "stream" => assert!(
+                chpl.contains("Stream"),
+                "stream gather should mention stream"
+            ),
+            "first" => assert!(
+                chpl.contains("c_is_match"),
+                "first gather should call c_is_match"
+            ),
             _ => unreachable!(),
         }
     }
@@ -274,14 +357,25 @@ fn test_checkpoint_config_in_generated_chapel() {
     let dir = tempfile::tempdir().unwrap();
     chapeliser::codegen::generate_all(&m, dir.path().to_str().unwrap()).unwrap();
 
-    let chpl = fs::read_to_string(
-        dir.path().join("chapel/checkpoint_test_distributed.chpl")
-    ).unwrap();
+    let chpl =
+        fs::read_to_string(dir.path().join("chapel/checkpoint_test_distributed.chpl")).unwrap();
 
-    assert!(chpl.contains("maxRetries: int = 5"), "Should set maxRetries to 5");
-    assert!(chpl.contains("enableCheckpoint: bool = true"), "Should enable checkpointing");
-    assert!(chpl.contains("checkpointIntervalSecs: int = 60"), "Should set checkpoint interval");
-    assert!(chpl.contains("c_checkpoint_save"), "Should declare checkpoint save FFI");
+    assert!(
+        chpl.contains("maxRetries: int = 5"),
+        "Should set maxRetries to 5"
+    );
+    assert!(
+        chpl.contains("enableCheckpoint: bool = true"),
+        "Should enable checkpointing"
+    );
+    assert!(
+        chpl.contains("checkpointIntervalSecs: int = 60"),
+        "Should set checkpoint interval"
+    );
+    assert!(
+        chpl.contains("c_checkpoint_save"),
+        "Should declare checkpoint save FFI"
+    );
 }
 
 #[test]
@@ -313,9 +407,18 @@ fn test_zig_ffi_exports_all_functions() {
     }
 
     // All user-facing externs
-    assert!(zig.contains("mass_panic_init"), "Should declare user's init");
-    assert!(zig.contains("mass_panic_shutdown"), "Should declare user's shutdown");
-    assert!(zig.contains("mass_panic_process_item"), "Should declare user's process_item");
+    assert!(
+        zig.contains("mass_panic_init"),
+        "Should declare user's init"
+    );
+    assert!(
+        zig.contains("mass_panic_shutdown"),
+        "Should declare user's shutdown"
+    );
+    assert!(
+        zig.contains("mass_panic_process_item"),
+        "Should declare user's process_item"
+    );
 }
 
 // ===========================================================================
@@ -344,9 +447,7 @@ fn test_point_to_point_all_25_combinations() {
                 .path()
                 .join(format!("chapel/{safe_name}_distributed.chpl"));
             let zig_path = dir.path().join(format!("zig/{safe_name}_ffi.zig"));
-            let h_path = dir
-                .path()
-                .join(format!("include/{safe_name}_chapeliser.h"));
+            let h_path = dir.path().join(format!("include/{safe_name}_chapeliser.h"));
             let build_path = dir.path().join("build.sh");
 
             assert!(
@@ -442,15 +543,13 @@ fn test_point_to_point_all_25_combinations() {
 /// content for the mass-panic workload.
 #[test]
 fn test_end_to_end_panic_attacker_all_artifacts() {
-    let m =
-        chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
+    let m = chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
     chapeliser::manifest::validate(&m).unwrap();
 
     let (dir, _safe_name) = generate_to_tempdir(&m);
 
     // --- Chapel artifact ---
-    let chpl =
-        fs::read_to_string(dir.path().join("chapel/mass_panic_distributed.chpl")).unwrap();
+    let chpl = fs::read_to_string(dir.path().join("chapel/mass_panic_distributed.chpl")).unwrap();
 
     // Module structure
     assert!(
@@ -523,15 +622,11 @@ fn test_end_to_end_panic_attacker_all_artifacts() {
         "mass_panic_checkpoint_save",
         "mass_panic_checkpoint_load",
     ] {
-        assert!(
-            zig.contains(user_fn),
-            "Zig missing user extern: {user_fn}"
-        );
+        assert!(zig.contains(user_fn), "Zig missing user extern: {user_fn}");
     }
 
     // --- C header artifact ---
-    let header =
-        fs::read_to_string(dir.path().join("include/mass_panic_chapeliser.h")).unwrap();
+    let header = fs::read_to_string(dir.path().join("include/mass_panic_chapeliser.h")).unwrap();
 
     // Include guards
     assert!(
@@ -623,7 +718,11 @@ fn test_end_to_end_library_api() {
     chapeliser::generate("examples/panic-attacker/chapeliser.toml", output).unwrap();
 
     // All four artifacts should exist
-    assert!(dir.path().join("chapel/mass_panic_distributed.chpl").exists());
+    assert!(
+        dir.path()
+            .join("chapel/mass_panic_distributed.chpl")
+            .exists()
+    );
     assert!(dir.path().join("zig/mass_panic_ffi.zig").exists());
     assert!(dir.path().join("include/mass_panic_chapeliser.h").exists());
     assert!(dir.path().join("build.sh").exists());
@@ -665,9 +764,18 @@ fn test_edge_single_locale() {
     .unwrap();
 
     // Even with max-nodes=1, the generated Chapel must be structurally complete
-    assert!(chpl.contains("c_init"), "Single locale: should still call c_init");
-    assert!(chpl.contains("c_shutdown"), "Single locale: should still call c_shutdown");
-    assert!(chpl.contains("c_process_item"), "Single locale: should still process items");
+    assert!(
+        chpl.contains("c_init"),
+        "Single locale: should still call c_init"
+    );
+    assert!(
+        chpl.contains("c_shutdown"),
+        "Single locale: should still call c_shutdown"
+    );
+    assert!(
+        chpl.contains("c_process_item"),
+        "Single locale: should still process items"
+    );
 }
 
 /// Single item (totalItems=1, expected-items=1) — smallest possible workload.
@@ -701,8 +809,14 @@ fn test_edge_single_item() {
     )
     .unwrap();
 
-    assert!(chpl.contains("c_init"), "Single item: should still call c_init");
-    assert!(chpl.contains("c_process_item"), "Single item: should process the one item");
+    assert!(
+        chpl.contains("c_init"),
+        "Single item: should still call c_init"
+    );
+    assert!(
+        chpl.contains("c_process_item"),
+        "Single item: should process the one item"
+    );
 }
 
 /// Very large grain size (grainSize > expected items) — everything in one chunk.
@@ -737,8 +851,14 @@ fn test_edge_large_grain_size() {
     .unwrap();
 
     // grain-size 10000 with 5 items: one chunk. Must still generate valid code.
-    assert!(chpl.contains("grainSize: int = 10000"), "Should reflect grain size 10000");
-    assert!(chpl.contains("c_process_item"), "Large grain: should still process items");
+    assert!(
+        chpl.contains("grainSize: int = 10000"),
+        "Should reflect grain size 10000"
+    );
+    assert!(
+        chpl.contains("c_process_item"),
+        "Large grain: should still process items"
+    );
 }
 
 /// Validation must reject zero grain-size.
@@ -765,7 +885,10 @@ fn test_edge_zero_grain_size_rejected() {
     let result = chapeliser::manifest::validate(&m);
     assert!(result.is_err(), "Zero grain-size should be rejected");
     assert!(
-        result.unwrap_err().to_string().contains("grain-size must be at least 1"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("grain-size must be at least 1"),
         "Error should mention grain-size"
     );
 }
@@ -794,7 +917,10 @@ fn test_edge_zero_min_nodes_rejected() {
     let result = chapeliser::manifest::validate(&m);
     assert!(result.is_err(), "Zero min-nodes should be rejected");
     assert!(
-        result.unwrap_err().to_string().contains("min-nodes must be at least 1"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("min-nodes must be at least 1"),
         "Error should mention min-nodes"
     );
 }
@@ -852,7 +978,10 @@ fn test_edge_invalid_gather_rejected() {
     let result = chapeliser::manifest::validate(&m);
     assert!(result.is_err(), "Invalid gather should be rejected");
     assert!(
-        result.unwrap_err().to_string().contains("Unknown gather strategy"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown gather strategy"),
         "Error should mention gather strategy"
     );
 }
@@ -882,7 +1011,10 @@ fn test_edge_invalid_serialization_rejected() {
     let result = chapeliser::manifest::validate(&m);
     assert!(result.is_err(), "Invalid serialization should be rejected");
     assert!(
-        result.unwrap_err().to_string().contains("Unknown serialization format"),
+        result
+            .unwrap_err()
+            .to_string()
+            .contains("Unknown serialization format"),
         "Error should mention serialization format"
     );
 }
@@ -909,7 +1041,10 @@ fn test_edge_invalid_entry_point_rejected() {
 
     let m = parse_manifest(toml_str);
     let result = chapeliser::manifest::validate(&m);
-    assert!(result.is_err(), "Entry point without :: or : should be rejected");
+    assert!(
+        result.is_err(),
+        "Entry point without :: or : should be rejected"
+    );
 }
 
 /// init_manifest should refuse to overwrite an existing manifest.
@@ -920,7 +1055,10 @@ fn test_edge_init_refuses_overwrite() {
     chapeliser::manifest::init_manifest(dir.path().to_str().unwrap()).unwrap();
     // Second call should fail
     let result = chapeliser::manifest::init_manifest(dir.path().to_str().unwrap());
-    assert!(result.is_err(), "init should refuse to overwrite existing manifest");
+    assert!(
+        result.is_err(),
+        "init should refuse to overwrite existing manifest"
+    );
     assert!(
         result.unwrap_err().to_string().contains("already exists"),
         "Error should say manifest already exists"
@@ -951,18 +1089,21 @@ fn test_edge_hyphenated_name() {
     let (dir, safe_name) = generate_to_tempdir(&m);
 
     assert_eq!(safe_name, "my_complex_workload_name");
-    assert!(dir
-        .path()
-        .join("chapel/my_complex_workload_name_distributed.chpl")
-        .exists());
-    assert!(dir
-        .path()
-        .join("zig/my_complex_workload_name_ffi.zig")
-        .exists());
-    assert!(dir
-        .path()
-        .join("include/my_complex_workload_name_chapeliser.h")
-        .exists());
+    assert!(
+        dir.path()
+            .join("chapel/my_complex_workload_name_distributed.chpl")
+            .exists()
+    );
+    assert!(
+        dir.path()
+            .join("zig/my_complex_workload_name_ffi.zig")
+            .exists()
+    );
+    assert!(
+        dir.path()
+            .join("include/my_complex_workload_name_chapeliser.h")
+            .exists()
+    );
 }
 
 // ===========================================================================
@@ -1025,8 +1166,7 @@ fn test_aspect_zig_spdx_header() {
         let m = parse_manifest(&toml_str);
         let (dir, safe_name) = generate_to_tempdir(&m);
 
-        let zig =
-            fs::read_to_string(dir.path().join(format!("zig/{safe_name}_ffi.zig"))).unwrap();
+        let zig = fs::read_to_string(dir.path().join(format!("zig/{safe_name}_ffi.zig"))).unwrap();
 
         assert!(
             zig.contains("SPDX-License-Identifier: PMPL-1.0-or-later"),
@@ -1038,8 +1178,7 @@ fn test_aspect_zig_spdx_header() {
 /// Every generated Zig file must use callconv(.C) on all exports.
 #[test]
 fn test_aspect_zig_callconv_exports() {
-    let m =
-        chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
+    let m = chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
     let (dir, _safe_name) = generate_to_tempdir(&m);
 
     let zig = fs::read_to_string(dir.path().join("zig/mass_panic_ffi.zig")).unwrap();
@@ -1062,8 +1201,7 @@ fn test_aspect_zig_callconv_exports() {
 /// Every generated Zig file must use callconv(.C) on all user externs too.
 #[test]
 fn test_aspect_zig_extern_callconv() {
-    let m =
-        chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
+    let m = chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
     let (dir, _safe_name) = generate_to_tempdir(&m);
 
     let zig = fs::read_to_string(dir.path().join("zig/mass_panic_ffi.zig")).unwrap();
@@ -1089,8 +1227,7 @@ fn test_aspect_zig_extern_callconv() {
 fn test_aspect_build_script_executable() {
     use std::os::unix::fs::PermissionsExt;
 
-    let m =
-        chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
+    let m = chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
     let (dir, _safe_name) = generate_to_tempdir(&m);
 
     let build_path = dir.path().join("build.sh");
@@ -1114,11 +1251,8 @@ fn test_aspect_header_include_guards() {
         let m = parse_manifest(&toml_str);
         let (dir, safe_name) = generate_to_tempdir(&m);
 
-        let h = fs::read_to_string(
-            dir.path()
-                .join(format!("include/{safe_name}_chapeliser.h")),
-        )
-        .unwrap();
+        let h = fs::read_to_string(dir.path().join(format!("include/{safe_name}_chapeliser.h")))
+            .unwrap();
 
         let upper = safe_name.to_uppercase();
         assert!(
@@ -1139,12 +1273,10 @@ fn test_aspect_header_include_guards() {
 /// Every generated C header must have the SPDX license header.
 #[test]
 fn test_aspect_header_spdx() {
-    let m =
-        chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
+    let m = chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
     let (dir, _safe_name) = generate_to_tempdir(&m);
 
-    let h =
-        fs::read_to_string(dir.path().join("include/mass_panic_chapeliser.h")).unwrap();
+    let h = fs::read_to_string(dir.path().join("include/mass_panic_chapeliser.h")).unwrap();
     assert!(
         h.contains("SPDX-License-Identifier: PMPL-1.0-or-later"),
         "C header missing SPDX header"
@@ -1154,8 +1286,7 @@ fn test_aspect_header_spdx() {
 /// Build script must contain the SPDX license header.
 #[test]
 fn test_aspect_build_script_spdx() {
-    let m =
-        chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
+    let m = chapeliser::manifest::load_manifest("examples/panic-attacker/chapeliser.toml").unwrap();
     let (dir, _safe_name) = generate_to_tempdir(&m);
 
     let build = fs::read_to_string(dir.path().join("build.sh")).unwrap();
@@ -1245,13 +1376,7 @@ fn test_regression_retry_config_in_output() {
 /// Manifest validation catches all five invalid partition names.
 #[test]
 fn test_regression_validate_all_invalid_partitions() {
-    let bad_names = [
-        "round-robin",
-        "random",
-        "hash",
-        "PER-ITEM",
-        "per_item",
-    ];
+    let bad_names = ["round-robin", "random", "hash", "PER-ITEM", "per_item"];
 
     for bad in &bad_names {
         let toml_str = format!(
@@ -1285,13 +1410,7 @@ fn test_regression_validate_all_invalid_partitions() {
 /// Manifest validation catches all five invalid gather names.
 #[test]
 fn test_regression_validate_all_invalid_gathers() {
-    let bad_names = [
-        "scatter",
-        "broadcast",
-        "allreduce",
-        "MERGE",
-        "tree_reduce",
-    ];
+    let bad_names = ["scatter", "broadcast", "allreduce", "MERGE", "tree_reduce"];
 
     for bad in &bad_names {
         let toml_str = format!(
@@ -1325,7 +1444,14 @@ fn test_regression_validate_all_invalid_gathers() {
 /// All six valid serialization formats must pass validation.
 #[test]
 fn test_regression_all_valid_serialization_formats() {
-    let formats = ["bincode", "messagepack", "cbor", "json", "flatbuffers", "raw"];
+    let formats = [
+        "bincode",
+        "messagepack",
+        "cbor",
+        "json",
+        "flatbuffers",
+        "raw",
+    ];
 
     for fmt in &formats {
         let toml_str = format!(
@@ -1376,7 +1502,10 @@ fn test_regression_default_resilience() {
 
     let m = parse_manifest(toml_str);
     assert_eq!(m.resilience.retries, 3, "Default retries should be 3");
-    assert!(!m.resilience.checkpoint, "Default checkpoint should be false");
+    assert!(
+        !m.resilience.checkpoint,
+        "Default checkpoint should be false"
+    );
     assert_eq!(
         m.resilience.checkpoint_interval_secs, 300,
         "Default checkpoint interval should be 300s"
@@ -1408,7 +1537,10 @@ fn test_regression_default_scaling() {
     assert_eq!(m.scaling.min_nodes, 1, "Default min-nodes should be 1");
     assert_eq!(m.scaling.max_nodes, 64, "Default max-nodes should be 64");
     assert_eq!(m.scaling.grain_size, 50, "Default grain-size should be 50");
-    assert!(m.scaling.expected_items.is_none(), "Default expected-items should be None");
+    assert!(
+        m.scaling.expected_items.is_none(),
+        "Default expected-items should be None"
+    );
 }
 
 /// Chapel compiler flags from manifest should appear in build script.
