@@ -1,47 +1,40 @@
-;; SPDX-License-Identifier: PMPL-1.0-or-later
-;; Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
-;; STATE.a2ml — Current project state for chapeliser
+# SPDX-License-Identifier: PMPL-1.0-or-later
+# Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
+#
+# STATE.a2ml — Chapeliser project state
+[metadata]
+project = "chapeliser"
+version = "0.1.0"
+last-updated = "2026-03-21"
+status = "active"
+session = "converted from scheme — 2026-04-11"
 
-(state
-  (metadata
-    (version "0.1.0")
-    (last-updated "2026-03-21")
-    (author "Jonathan D.A. Jewell"))
+[project-context]
+name = "Chapeliser"
+purpose = """General-purpose Chapel acceleration framework"""
+completion-percentage = 45
 
-  (project-context
-    (name "chapeliser")
-    (description "General-purpose Chapel acceleration framework")
-    (status "alpha")
-    (priority "2")
-    (ecosystem "-iser family (https://github.com/hyperpolymath/iseriser)"))
+[position]
+phase = "phase-1-complete"   # design | implementation | testing | maintenance | archived
+maturity = "experimental"  # experimental | alpha | beta | production | lts
 
-  (current-position
-    (phase "phase-1-complete")
-    (completion-percentage 45)
-    (milestone "Core implementation complete — Chapel/Zig/C codegen, Idris2 ABI proofs, 15 passing tests")
-    (what-changed
-      "2026-03-21: Phase 1 complete. Chapel codegen produces compilable .chpl with "
-      "5 partition strategies (per-item, chunk, adaptive/DynamicIters, spatial/BlockDist, keyed), "
-      "5 gather strategies (merge, reduce, tree-reduce, stream, first), retry logic, checkpoint. "
-      "Buffer-based FFI (not pointer-based) for cross-locale safety. Idris2 ABI proofs for "
-      "partition completeness, gather conservation, serialisation round-trip, retry isolation. "
-      "Zig reference FFI implementation. Rust ABI types with runtime verification. "
-      "Cluster config parsing (cluster.toml → GASNET/SSH env vars). 15 tests passing."))
+[route-to-mvp]
+milestones = [
+  # No milestones recorded
+]
 
-  (route-to-mvp
-    (step 1 "DONE — Chapel codegen with all partition/gather strategies")
-    (step 2 "DONE — Idris2 ABI proofs (Types, Layout, Foreign)")
-    (step 3 "DONE — Zig FFI bridge generator + reference implementation")
-    (step 4 "DONE — Cluster config parsing and build release mode")
-    (step 5 "TODO — End-to-end integration with panic-attacker")
-    (step 6 "TODO — Shell completions and additional examples")
-    (step 7 "TODO — PanLL panel and BoJ cartridge integration"))
+[blockers-and-issues]
+issues = [
+  "Chapel compiler not installed on dev machine — generated code verified by structure, not compilation",
+]
 
-  (blockers-and-issues
-    (note "Chapel compiler not installed on dev machine — generated code verified by structure, not compilation")
-    (note "panic-attacker integration requires panic-attacker to export C-ABI functions"))
+[critical-next-actions]
+actions = [
+  "End-to-end test: generate + compile + run with panic-attacker workload",
+  "Add shell completions (bash, zsh, fish)",
+  "Write additional examples (Monte Carlo, image processing)",
+]
 
-  (critical-next-actions
-    (action "End-to-end test: generate + compile + run with panic-attacker workload")
-    (action "Add shell completions (bash, zsh, fish)")
-    (action "Write additional examples (Monte Carlo, image processing)")))
+[maintenance-status]
+last-run-utc = "2026-03-21T00:00:00Z"
+last-result = "unknown"  # unknown | pass | warn | fail
