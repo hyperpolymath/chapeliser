@@ -2,6 +2,8 @@
 # chapeliser — General-purpose Chapel acceleration framework
 
 # Default: build and test
+import? "contractile.just"
+
 default: build test
 
 # Build release binary
