@@ -1,5 +1,6 @@
-// Chapeliser FFI Integration Tests
 // SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
+// Chapeliser FFI Integration Tests
 //
 // Tests the reference FFI implementation against the Idris2 ABI contract.
 // These tests exercise the full lifecycle: init → load → process → store → shutdown.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 #![forbid(unsafe_code)]
 #![allow(
     dead_code,
@@ -6,8 +8,6 @@
     clippy::if_same_then_else,
     clippy::vec_init_then_push
 )]
-// SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk>
 //
 // Chapeliser library API.
 // This crate can be used as both a CLI tool (`chapeliser` binary) and as a library

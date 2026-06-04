@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: MPL-2.0
+// Copyright (c) Jonathan D.A. Jewell <j.d.a.jewell@open.ac.uk>
 // Chapeliser FFI Reference Implementation
 //
 // This module provides a REFERENCE implementation of the Chapeliser FFI —
@@ -13,7 +15,6 @@
 // to the user's workload-specific functions. This file implements those functions
 // for a trivial "echo" workload that copies input items to output unchanged.
 //
-// SPDX-License-Identifier: MPL-2.0
 
 const std = @import("std");
 
