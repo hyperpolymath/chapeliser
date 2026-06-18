@@ -7,15 +7,17 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    // Shared library (.so, .dylib, .dll)
+    // Shared library (.so, .dylib, .dll).
+    // NOTE: no explicit `.version` — a versioned shared library trips a null
+    // deref in Zig 0.14's InstallArtifact (major_only_filename); Chapel links
+    // the static archive anyway.
     const lib = b.addSharedLibrary(.{
         .name = "chapeliser_ffi",
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
     });
-
-    lib.version = .{ .major = 0, .minor = 1, .patch = 0 };
+    lib.linkLibC(); // main.zig uses std.heap.c_allocator
 
     // Static library (.a) — Chapel links against this
     const lib_static = b.addStaticLibrary(.{
@@ -24,6 +26,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    lib_static.linkLibC();
 
     b.installArtifact(lib);
     b.installArtifact(lib_static);
@@ -34,6 +37,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
+    lib_tests.linkLibC();
 
     const run_lib_tests = b.addRunArtifact(lib_tests);
     const test_step = b.step("test", "Run library tests");
@@ -45,7 +49,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
     });
-
+    integration_tests.linkLibC();
     integration_tests.linkLibrary(lib);
 
     const run_integration_tests = b.addRunArtifact(integration_tests);

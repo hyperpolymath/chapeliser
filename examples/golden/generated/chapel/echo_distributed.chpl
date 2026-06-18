@@ -124,17 +124,23 @@ module echo_Distributed {
     var itemData: [0..#nItems] [0..#maxItemBytes] uint(8);
     var itemSizes: [0..#nItems] c_size_t;
 
+    var loadFailed = false;
     on Locales[0] {
       for i in 0..#nItems {
         var sz: c_size_t = maxItemBytes: c_size_t;
         const rc = c_load_item(i: c_int, c_ptrTo(itemData[i][0]), c_ptrTo(sz));
         if rc != 0 {
           writeln("FATAL: c_load_item(", i, ") returned ", rc);
-          c_shutdown();
-          return;
+          loadFailed = true;
+          break;
         }
         itemSizes[i] = sz;
       }
+    }
+    // 'return' is illegal inside an 'on' block; bail out after it.
+    if loadFailed {
+      c_shutdown();
+      return;
     }
     writeln("  Loaded ", nItems, " items");
 
