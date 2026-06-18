@@ -64,7 +64,11 @@ jobs:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4
       - name: Regenerate golden artifacts and diff against committed tree
         run: |
-          cargo run --quiet -- generate -m examples/golden/echo.toml -o /tmp/golden
+          # retry: fresh runners occasionally flake fetching crates from crates.io
+          for i in 1 2 3; do
+            cargo run --quiet -- generate -m examples/golden/echo.toml -o /tmp/golden && break
+            echo "attempt $i failed; retrying after backoff…"; sleep $((i * 5))
+          done
           diff -ru examples/golden/generated /tmp/golden
 
   chapel-golden:
