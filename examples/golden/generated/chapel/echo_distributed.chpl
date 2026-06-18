@@ -11,6 +11,7 @@ module echo_Distributed {
   use List;
   use Time;
   use IO;
+  require "echo_abi.h";
 
   // ------------------------------------------------------------------
   // Runtime configuration (override with --name=value)

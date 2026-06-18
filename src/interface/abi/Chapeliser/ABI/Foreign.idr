@@ -18,6 +18,8 @@ module Chapeliser.ABI.Foreign
 
 import Chapeliser.ABI.Types
 import Chapeliser.ABI.Layout
+import Data.So
+import Data.Vect
 
 %default total
 
@@ -186,6 +188,11 @@ public export
 data PipelineCorrect : WorkloadConfig -> Type where
   MkPipelineCorrect :
     {cfg : WorkloadConfig} ->
-    (partition : ValidPartition (MkPartition (perItemSlices cfg.totalItems cfg.numLocales))) ->
+    -- The partition is taken abstractly (any Partition of totalItems across
+    -- numLocales — e.g. one built by perItemSlices) so the *type* carries no
+    -- construction-time `So (numLocales > 0)` obligation; validity is the
+    -- witness that matters.
+    {p : Partition cfg.totalItems cfg.numLocales} ->
+    (partition : ValidPartition p) ->
     (gather : GatherConservation (MkGatherInput (replicate cfg.numLocales (cfg.totalItems `div` cfg.numLocales))) cfg.totalItems) ->
     PipelineCorrect cfg
