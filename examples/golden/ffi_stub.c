@@ -17,6 +17,9 @@
 #include <stddef.h>
 #include <string.h>
 
+/* Prototypes for the c_* ABI (also `require`d by the generated Chapel). */
+#include "echo_abi.h"
+
 #define ECHO_ITEMS 8
 #define ECHO_PAYLOAD 4
 
