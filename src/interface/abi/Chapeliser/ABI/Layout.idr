@@ -32,7 +32,7 @@ paddingFor : (offset : Nat) -> (alignment : Nat) -> Nat
 paddingFor offset alignment =
   if offset `mod` alignment == 0
     then 0
-    else alignment - (offset `mod` alignment)
+    else minus alignment (offset `mod` alignment)
 
 ||| Round up to next alignment boundary
 public export
