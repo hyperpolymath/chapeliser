@@ -78,6 +78,7 @@ jobs:
         run: |
           chpl --version
           chpl --main-module echo_Distributed \
+            -I examples/golden/generated/include \
             examples/golden/generated/chapel/echo_distributed.chpl \
             examples/golden/ffi_stub.c \
             -o /tmp/echo_distributed

@@ -69,17 +69,10 @@ resultToInt NullPointer = 4
 resultToInt RetryExhausted = 5
 resultToInt CheckpointError = 6
 
-||| Results are decidably equal
-public export
-DecEq Result where
-  decEq Ok Ok = Yes Refl
-  decEq Error Error = Yes Refl
-  decEq InvalidParam InvalidParam = Yes Refl
-  decEq OutOfMemory OutOfMemory = Yes Refl
-  decEq NullPointer NullPointer = Yes Refl
-  decEq RetryExhausted RetryExhausted = Yes Refl
-  decEq CheckpointError CheckpointError = Yes Refl
-  decEq _ _ = No absurd
+-- NOTE: a DecEq instance for Result is intentionally omitted — it is auxiliary
+-- (no proof below uses it), and Idris2's `No absurd` requires explicit
+-- off-diagonal constructor pairs rather than a `_ _` catch-all. Re-add via
+-- elaborator-reflection derivation if decidable equality is ever needed.
 
 --------------------------------------------------------------------------------
 -- Partition Strategies
@@ -95,15 +88,7 @@ data PartitionStrategy
   | Spatial    -- Block-distributed domain decomposition
   | Keyed      -- Route by key hash: same key → same locale
 
-||| DecEq for PartitionStrategy
-public export
-DecEq PartitionStrategy where
-  decEq PerItem PerItem = Yes Refl
-  decEq Chunk Chunk = Yes Refl
-  decEq Adaptive Adaptive = Yes Refl
-  decEq Spatial Spatial = Yes Refl
-  decEq Keyed Keyed = Yes Refl
-  decEq _ _ = No absurd
+-- (DecEq for PartitionStrategy omitted — auxiliary, see note above.)
 
 --------------------------------------------------------------------------------
 -- Gather Strategies
@@ -119,14 +104,7 @@ data GatherStrategy
   | Stream      -- Results available incrementally as they complete
   | First       -- Return first result matching a predicate
 
-public export
-DecEq GatherStrategy where
-  decEq Merge Merge = Yes Refl
-  decEq Reduce Reduce = Yes Refl
-  decEq TreeReduce TreeReduce = Yes Refl
-  decEq Stream Stream = Yes Refl
-  decEq First First = Yes Refl
-  decEq _ _ = No absurd
+-- (DecEq for GatherStrategy omitted — auxiliary, see note above.)
 
 --------------------------------------------------------------------------------
 -- Partition — the core data structure

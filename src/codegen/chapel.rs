@@ -100,6 +100,11 @@ fn write_imports(src: &mut String, manifest: &Manifest) -> Result<()> {
         writeln!(src, "  use AtomicObjects;")?;
     }
 
+    // C prototypes for the c_* ABI so chpl can resolve the extern procs —
+    // needed for calls inside 'on'/'coforall' (potentially remote) contexts.
+    let safe_name = manifest.workload.name.replace('-', "_");
+    writeln!(src, "  require \"{safe_name}_abi.h\";")?;
+
     writeln!(src)?;
     Ok(())
 }
