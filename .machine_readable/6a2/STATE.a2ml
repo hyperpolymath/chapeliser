@@ -5,7 +5,7 @@
 [metadata]
 project = "chapeliser"
 version = "0.1.0"
-last-updated = "2026-03-21"
+last-updated = "2026-06-18"
 status = "active"
 session = "converted from scheme — 2026-04-11"
 
@@ -15,7 +15,7 @@ purpose = """General-purpose Chapel acceleration framework"""
 completion-percentage = 45
 
 [position]
-phase = "phase-1-complete"   # design | implementation | testing | maintenance | archived
+phase = "testing"   # design | implementation | testing | maintenance | archived
 maturity = "experimental"  # experimental | alpha | beta | production | lts
 
 [route-to-mvp]
@@ -25,16 +25,17 @@ milestones = [
 
 [blockers-and-issues]
 issues = [
-  "Chapel compiler not installed on dev machine — generated code verified by structure, not compilation",
+  "Idris2/Zig/Chapel toolchains unavailable in the local dev sandbox — proofs, FFI, and generated Chapel are now machine-checked in CI (.github/workflows/provable.yml) rather than locally.",
+  "provable.yml has not yet had a green run — until it does, the Idris2 proofs, Zig FFI build, and golden Chapel compile/run are written but not confirmed (ROADMAP Phase 1b).",
 ]
 
 [critical-next-actions]
 actions = [
-  "End-to-end test: generate + compile + run with panic-attacker workload",
-  "Add shell completions (bash, zsh, fish)",
-  "Write additional examples (Monte Carlo, image processing)",
+  "Drive .github/workflows/provable.yml to green (idris2-proofs, zig-ffi, codegen-drift, chapel-golden).",
+  "Add golden samples for the remaining partition/gather strategies and multi-locale runs.",
+  "Add shell completions (bash, zsh, fish).",
 ]
 
 [maintenance-status]
-last-run-utc = "2026-03-21T00:00:00Z"
-last-result = "unknown"  # unknown | pass | warn | fail
+last-run-utc = "2026-06-18T00:00:00Z"
+last-result = "warn"  # unknown | pass | warn | fail — Rust layer green (63 tests); provable.yml pending first run

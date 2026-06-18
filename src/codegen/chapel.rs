@@ -442,6 +442,7 @@ fn write_load_phase(src: &mut String) -> Result<()> {
     writeln!(src, "    var itemSizes: [0..#nItems] c_size_t;")?;
     writeln!(src)?;
 
+    writeln!(src, "    var loadFailed = false;")?;
     writeln!(src, "    on Locales[0] {{")?;
     writeln!(src, "      for i in 0..#nItems {{")?;
     writeln!(src, "        var sz: c_size_t = maxItemBytes: c_size_t;")?;
@@ -454,11 +455,19 @@ fn write_load_phase(src: &mut String) -> Result<()> {
         src,
         "          writeln(\"FATAL: c_load_item(\", i, \") returned \", rc);"
     )?;
-    writeln!(src, "          c_shutdown();")?;
-    writeln!(src, "          return;")?;
+    writeln!(src, "          loadFailed = true;")?;
+    writeln!(src, "          break;")?;
     writeln!(src, "        }}")?;
     writeln!(src, "        itemSizes[i] = sz;")?;
     writeln!(src, "      }}")?;
+    writeln!(src, "    }}")?;
+    writeln!(
+        src,
+        "    // 'return' is illegal inside an 'on' block; bail out after it."
+    )?;
+    writeln!(src, "    if loadFailed {{")?;
+    writeln!(src, "      c_shutdown();")?;
+    writeln!(src, "      return;")?;
     writeln!(src, "    }}")?;
     writeln!(src, "    writeln(\"  Loaded \", nItems, \" items\");")?;
     writeln!(src)?;

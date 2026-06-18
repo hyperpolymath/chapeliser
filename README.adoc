@@ -110,13 +110,15 @@ You write **zero Chapel code**. Chapeliser generates everything.
 
 Chapeliser follows the hyperpolymath ABI-FFI standard:
 
-* **Idris2 ABI** (`src/abi/`) — Formal proofs that:
-  - Data layouts are consistent across nodes
+* **Idris2 ABI** (`src/interface/abi/`) — Dependent-type *proof obligations*,
+  machine-checked in CI (`.github/workflows/provable.yml`); the Rust mirror in
+  `src/abi/` carries the matching runtime types and checks:
   - Partition functions produce complete, non-overlapping splits
   - Gather functions preserve all results
   - Serialization round-trips are identity
+  - Memory layouts are consistent across the FFI boundary
 
-* **Zig FFI** (`ffi/zig/`) — C-ABI bridge between:
+* **Zig FFI** (`src/interface/ffi/`) — C-ABI bridge between:
   - The user's application (any language with C FFI)
   - The Chapel runtime (`chpl_*` functions)
   - Memory management across the boundary
@@ -138,7 +140,7 @@ Chapeliser follows the hyperpolymath ABI-FFI standard:
 
 [source,bash]
 ----
-# Install
+# Install (once published to crates.io — see ROADMAP Phase 3)
 cargo install chapeliser
 
 # In your project directory, create chapeliser.toml (see above)
@@ -158,7 +160,10 @@ hundreds of repositories on a compute cluster.
 
 == Status
 
-**Pre-alpha.** Architecture defined, ABI proofs in progress, codegen planned.
+**Pre-alpha.** The Rust CLI and code generator are implemented and tested
+(63 tests). The Idris2 proofs, Zig FFI, and a golden Chapel compile-and-run are
+wired into CI as the verification gate (`.github/workflows/provable.yml`) — see
+`ROADMAP.adoc` Phase 1b for their live (green/red) status. Not yet released.
 
 == License
 
