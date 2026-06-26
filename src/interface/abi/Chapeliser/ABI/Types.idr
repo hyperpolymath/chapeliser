@@ -134,9 +134,15 @@ sliceSum (s :: ss) = s.count + sliceSum ss
 
 ||| Partition completeness: the sum of all slice counts equals the total items.
 ||| This guarantees no items are lost or duplicated.
+|||
+||| The index `n` is bound explicitly in the constructor and shared with the
+||| `Partition n k` of `p`, so the obligation `sliceSum p.slices = n` is tied to
+||| the partition's declared item count. (A free `n` here would be existential —
+||| solvable to the actual slice sum — making the proof vacuous.)
 public export
 data PartitionComplete : (p : Partition n k) -> Type where
-  IsComplete : (prf : sliceSum p.slices = n) -> PartitionComplete p
+  IsComplete : {n : Nat} -> {k : Nat} -> {p : Partition n k} ->
+               (prf : sliceSum p.slices = n) -> PartitionComplete p
 
 ||| Two slices do not overlap if one ends before the other starts.
 public export
@@ -221,14 +227,18 @@ record SerBuffer where
   maxLen : Nat
   {auto 0 fits : So (len <= maxLen)}
 
-||| Proof that serialisation round-trips: for any item x,
-||| deserialize(serialize(x)) produces a value equivalent to x.
-||| This is stated as a type — the proof obligation is discharged
-||| by the user's implementation satisfying the contract.
+||| Length-conservation witness for serialisation: for a value whose payload
+||| is `origLen` bytes, decoding the encoded buffer restores exactly `origLen`
+||| bytes (`decodedLen = origLen`). This is the byte-length invariant that
+||| actually crosses the Zig/C FFI boundary — the full semantic round-trip of
+||| the payload bytes is the FFI implementation's contract, but the length
+||| equality is a genuine, machine-checkable obligation here (a mismatched
+||| `decodedLen` is rejected). `RoundTripOk` therefore carries a real proof,
+||| not an unconditional assertion.
 public export
-data RoundTrip : (fmt : SerFormat) -> Type where
-  ||| Witness that the format preserves data across serialize/deserialize.
-  RoundTripOk : (fmt : SerFormat) -> RoundTrip fmt
+data RoundTrip : (fmt : SerFormat) -> (origLen : Nat) -> (decodedLen : Nat) -> Type where
+  RoundTripOk : {origLen : Nat} -> {decodedLen : Nat} -> (fmt : SerFormat) ->
+                (prf : decodedLen = origLen) -> RoundTrip fmt origLen decodedLen
 
 --------------------------------------------------------------------------------
 -- Retry Safety

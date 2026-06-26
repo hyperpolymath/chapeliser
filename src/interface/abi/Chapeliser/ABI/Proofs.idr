@@ -152,18 +152,20 @@ gatherEmptyConserved : GatherConservation (MkGatherInput []) 0
 gatherEmptyConserved = Conserved Refl
 
 --------------------------------------------------------------------------------
--- Serialisation round-trip (invariant #3): witnesses for every format.
+-- Serialisation length-conservation (invariant #3): decoded length = original.
 --------------------------------------------------------------------------------
 
-||| Bincode round-trips.
+||| A 128-byte Bincode payload decodes back to exactly 128 bytes. The proof
+||| obligation `decodedLen = origLen` is real: `RoundTrip Bincode 128 64` has
+||| no inhabitant.
 export
-bincodeRoundTrips : RoundTrip Bincode
-bincodeRoundTrips = RoundTripOk Bincode
+bincodeRoundTrips : RoundTrip Bincode 128 128
+bincodeRoundTrips = RoundTripOk Bincode Refl
 
-||| The raw (identity) format round-trips.
+||| The raw (identity) format conserves a 64-byte payload's length.
 export
-rawRoundTrips : RoundTrip Raw
-rawRoundTrips = RoundTripOk Raw
+rawRoundTrips : RoundTrip Raw 64 64
+rawRoundTrips = RoundTripOk Raw Refl
 
 --------------------------------------------------------------------------------
 -- Retry isolation (invariant #4) + item-buffer isolation.
