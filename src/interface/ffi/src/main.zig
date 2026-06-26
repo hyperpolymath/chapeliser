@@ -72,14 +72,14 @@ var state: ?ReferenceState = null;
 //==============================================================================
 
 /// Initialise the reference workload. Returns 0 on success.
-export fn chapeliser_ref_init() callconv(.C) c_int {
+export fn c_init() callconv(.C) c_int {
     if (state != null) return @intFromEnum(Result.err); // already initialised
     state = ReferenceState.init(std.heap.c_allocator);
     return @intFromEnum(Result.ok);
 }
 
 /// Shut down the reference workload. Returns 0 on success.
-export fn chapeliser_ref_shutdown() callconv(.C) c_int {
+export fn c_shutdown() callconv(.C) c_int {
     if (state) |*s| {
         s.deinit();
         state = null;
@@ -93,7 +93,7 @@ export fn chapeliser_ref_shutdown() callconv(.C) c_int {
 //==============================================================================
 
 /// Return the total number of input items.
-export fn chapeliser_ref_get_total_items() callconv(.C) c_int {
+export fn c_get_total_items() callconv(.C) c_int {
     if (state) |s| {
         return @intCast(s.items.items.len);
     }
@@ -101,7 +101,7 @@ export fn chapeliser_ref_get_total_items() callconv(.C) c_int {
 }
 
 /// Serialise input item `idx` into `buf`. Set `*len` to bytes written.
-export fn chapeliser_ref_load_item(idx: c_int, buf: [*]u8, len: *usize) callconv(.C) c_int {
+export fn c_load_item(idx: c_int, buf: [*]u8, len: *usize) callconv(.C) c_int {
     const s = &(state orelse return @intFromEnum(Result.err));
     const i: usize = @intCast(idx);
     if (i >= s.items.items.len) return @intFromEnum(Result.invalid_param);
@@ -115,7 +115,7 @@ export fn chapeliser_ref_load_item(idx: c_int, buf: [*]u8, len: *usize) callconv
 }
 
 /// Receive a processed result at index `idx`.
-export fn chapeliser_ref_store_result(idx: c_int, buf: [*]const u8, len: usize) callconv(.C) c_int {
+export fn c_store_result(idx: c_int, buf: [*]const u8, len: usize) callconv(.C) c_int {
     const s = &(state orelse return @intFromEnum(Result.err));
 
     // Copy the result data
@@ -139,7 +139,7 @@ export fn chapeliser_ref_store_result(idx: c_int, buf: [*]const u8, len: usize) 
 //==============================================================================
 
 /// Process a single item: for the reference implementation, just echo it back.
-export fn chapeliser_ref_process_item(
+export fn c_process_item(
     in_buf: [*]const u8,
     in_len: usize,
     out_buf: [*]u8,
@@ -152,7 +152,7 @@ export fn chapeliser_ref_process_item(
 }
 
 /// Process a chunk of items: for reference, process each individually.
-export fn chapeliser_ref_process_chunk(
+export fn c_process_chunk(
     items_buf: [*]const u8,
     item_count: c_int,
     item_offsets: [*]const c_int,
@@ -178,7 +178,7 @@ export fn chapeliser_ref_process_chunk(
 //==============================================================================
 
 /// Combine two results: for reference, concatenate them.
-export fn chapeliser_ref_reduce(
+export fn c_reduce(
     a_buf: [*]const u8,
     a_len: usize,
     b_buf: [*]const u8,
@@ -197,7 +197,7 @@ export fn chapeliser_ref_reduce(
 //==============================================================================
 
 /// Check if a result matches: for reference, match if first byte is non-zero.
-export fn chapeliser_ref_is_match(buf: [*]const u8, len: usize) callconv(.C) c_int {
+export fn c_is_match(buf: [*]const u8, len: usize) callconv(.C) c_int {
     if (len == 0) return 0;
     return if (buf[0] != 0) 1 else 0;
 }
@@ -207,7 +207,7 @@ export fn chapeliser_ref_is_match(buf: [*]const u8, len: usize) callconv(.C) c_i
 //==============================================================================
 
 /// Hash an item's key: for reference, use FNV-1a on the first 8 bytes.
-export fn chapeliser_ref_key_hash(buf: [*]const u8, len: usize) callconv(.C) c_uint {
+export fn c_key_hash(buf: [*]const u8, len: usize) callconv(.C) c_uint {
     const hash_len = @min(len, 8);
     var h: u32 = 2166136261; // FNV offset basis
     for (buf[0..hash_len]) |b| {
@@ -222,7 +222,7 @@ export fn chapeliser_ref_key_hash(buf: [*]const u8, len: usize) callconv(.C) c_u
 //==============================================================================
 
 /// Save checkpoint: reference implementation is a no-op.
-export fn chapeliser_ref_checkpoint_save(
+export fn c_checkpoint_save(
     _: [*]const u8,
     _: usize,
     _: [*:0]const u8,
@@ -231,7 +231,7 @@ export fn chapeliser_ref_checkpoint_save(
 }
 
 /// Load checkpoint: reference implementation is a no-op.
-export fn chapeliser_ref_checkpoint_load(
+export fn c_checkpoint_load(
     _: [*]u8,
     _: *usize,
     _: [*:0]const u8,
@@ -243,11 +243,11 @@ export fn chapeliser_ref_checkpoint_load(
 // Version
 //==============================================================================
 
-export fn chapeliser_ref_version() callconv(.C) [*:0]const u8 {
+export fn chapeliser_version() callconv(.C) [*:0]const u8 {
     return VERSION.ptr;
 }
 
-export fn chapeliser_ref_build_info() callconv(.C) [*:0]const u8 {
+export fn chapeliser_build_info() callconv(.C) [*:0]const u8 {
     return BUILD_INFO.ptr;
 }
 
@@ -256,12 +256,12 @@ export fn chapeliser_ref_build_info() callconv(.C) [*:0]const u8 {
 //==============================================================================
 
 test "lifecycle" {
-    const rc_init = chapeliser_ref_init();
+    const rc_init = c_init();
     try std.testing.expectEqual(@as(c_int, 0), rc_init);
-    defer _ = chapeliser_ref_shutdown();
+    defer _ = c_shutdown();
 
     // Double init should fail
-    const rc_double = chapeliser_ref_init();
+    const rc_double = c_init();
     try std.testing.expectEqual(@as(c_int, 1), rc_double);
 }
 
@@ -270,7 +270,7 @@ test "process_item echo" {
     var output: [256]u8 = undefined;
     var out_len: usize = 0;
 
-    const rc = chapeliser_ref_process_item(input.ptr, input.len, &output, &out_len);
+    const rc = c_process_item(input.ptr, input.len, &output, &out_len);
     try std.testing.expectEqual(@as(c_int, 0), rc);
     try std.testing.expectEqual(input.len, out_len);
     try std.testing.expectEqualStrings(input, output[0..out_len]);
@@ -282,33 +282,33 @@ test "reduce concatenates" {
     var output: [256]u8 = undefined;
     var out_len: usize = 0;
 
-    const rc = chapeliser_ref_reduce(a.ptr, a.len, b.ptr, b.len, &output, &out_len);
+    const rc = c_reduce(a.ptr, a.len, b.ptr, b.len, &output, &out_len);
     try std.testing.expectEqual(@as(c_int, 0), rc);
     try std.testing.expectEqualStrings("foobar", output[0..out_len]);
 }
 
 test "key_hash deterministic" {
     const data = "testkey1";
-    const h1 = chapeliser_ref_key_hash(data.ptr, data.len);
-    const h2 = chapeliser_ref_key_hash(data.ptr, data.len);
+    const h1 = c_key_hash(data.ptr, data.len);
+    const h2 = c_key_hash(data.ptr, data.len);
     try std.testing.expectEqual(h1, h2);
 }
 
 test "is_match" {
     const yes = [_]u8{ 0x42, 0x00 };
     const no = [_]u8{ 0x00, 0x42 };
-    try std.testing.expectEqual(@as(c_int, 1), chapeliser_ref_is_match(&yes, yes.len));
-    try std.testing.expectEqual(@as(c_int, 0), chapeliser_ref_is_match(&no, no.len));
+    try std.testing.expectEqual(@as(c_int, 1), c_is_match(&yes, yes.len));
+    try std.testing.expectEqual(@as(c_int, 0), c_is_match(&no, no.len));
 }
 
 test "checkpoint not implemented" {
     var buf: [64]u8 = undefined;
     var len: usize = buf.len;
-    try std.testing.expectEqual(@as(c_int, -1), chapeliser_ref_checkpoint_save(&buf, len, "test"));
-    try std.testing.expectEqual(@as(c_int, -1), chapeliser_ref_checkpoint_load(&buf, &len, "test"));
+    try std.testing.expectEqual(@as(c_int, -1), c_checkpoint_save(&buf, len, "test"));
+    try std.testing.expectEqual(@as(c_int, -1), c_checkpoint_load(&buf, &len, "test"));
 }
 
 test "version" {
-    const ver = std.mem.span(chapeliser_ref_version());
+    const ver = std.mem.span(chapeliser_version());
     try std.testing.expectEqualStrings("0.1.0", ver);
 }
