@@ -18,6 +18,11 @@ Thumbs.db
 /dist/
 /out/
 
+# Idris2 build artifacts (anywhere in the tree)
+**/build/
+*.ttc
+*.ttm
+
 # Dependencies
 /node_modules/
 /vendor/
