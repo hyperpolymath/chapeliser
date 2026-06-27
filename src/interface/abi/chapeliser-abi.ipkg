@@ -9,3 +9,4 @@ modules = Chapeliser.ABI.Types
         , Chapeliser.ABI.Layout
         , Chapeliser.ABI.Foreign
         , Chapeliser.ABI.Proofs
+        , Chapeliser.ABI.Partition
