@@ -797,17 +797,30 @@ fn write_gather_merge(src: &mut String) -> Result<()> {
 fn write_gather_reduce(src: &mut String) -> Result<()> {
     writeln!(
         src,
-        "    // Reduce: fold all results into a single accumulator using c_reduce."
+        "    // Reduce: fold all SUCCESSFUL results into a single accumulator."
     )?;
     writeln!(
         src,
-        "    var accumBuf: [0..#maxItemBytes] uint(8) = resultData[0];"
+        "    // Seed from the first successful item (never blindly item 0 — it may"
     )?;
-    writeln!(src, "    var accumLen: c_size_t = resultSizes[0];")?;
+    writeln!(
+        src,
+        "    // have failed), and only mark the reduced result valid if at least"
+    )?;
+    writeln!(src, "    // one input succeeded and no fold step failed.")?;
+    writeln!(src, "    var accumBuf: [0..#maxItemBytes] uint(8);")?;
+    writeln!(src, "    var accumLen: c_size_t = 0;")?;
+    writeln!(src, "    var haveAccum: bool = false;")?;
     writeln!(src)?;
     writeln!(src, "    on Locales[0] {{")?;
-    writeln!(src, "      for i in 1..#(nItems - 1) {{")?;
+    writeln!(src, "      for i in 0..#nItems {{")?;
     writeln!(src, "        if !resultOk[i] then continue;")?;
+    writeln!(src, "        if !haveAccum {{")?;
+    writeln!(src, "          accumBuf = resultData[i];")?;
+    writeln!(src, "          accumLen = resultSizes[i];")?;
+    writeln!(src, "          haveAccum = true;")?;
+    writeln!(src, "          continue;")?;
+    writeln!(src, "        }}")?;
     writeln!(src, "        var tmpBuf: [0..#maxItemBytes] uint(8);")?;
     writeln!(src, "        var tmpLen: c_size_t = 0;")?;
     writeln!(src, "        const rc = c_reduce(")?;
@@ -818,17 +831,41 @@ fn write_gather_reduce(src: &mut String) -> Result<()> {
     writeln!(src, "        if rc == 0 {{")?;
     writeln!(src, "          accumBuf = tmpBuf;")?;
     writeln!(src, "          accumLen = tmpLen;")?;
+    writeln!(src, "        }} else {{")?;
+    writeln!(
+        src,
+        "          // A fold step failed: do not silently report a partial reduction."
+    )?;
+    writeln!(
+        src,
+        "          writeln(\"  ERROR: c_reduce failed at item \", i, \" (rc=\", rc, \")\");"
+    )?;
+    writeln!(src, "          haveAccum = false;")?;
+    writeln!(src, "          break;")?;
     writeln!(src, "        }}")?;
     writeln!(src, "      }}")?;
     writeln!(src, "    }}")?;
     writeln!(src)?;
-    writeln!(src, "    // Store reduced result as item 0")?;
-    writeln!(src, "    resultData[0] = accumBuf;")?;
-    writeln!(src, "    resultSizes[0] = accumLen;")?;
-    writeln!(src, "    resultOk[0] = true;")?;
     writeln!(
         src,
-        "    writeln(\"  Reduced \", nItems, \" results into 1\");"
+        "    // Store reduced result as item 0; valid only if we folded"
+    )?;
+    writeln!(
+        src,
+        "    // at least one successful input with no failed step."
+    )?;
+    writeln!(src, "    resultData[0] = accumBuf;")?;
+    writeln!(src, "    resultSizes[0] = accumLen;")?;
+    writeln!(src, "    resultOk[0] = haveAccum;")?;
+    writeln!(src, "    if haveAccum then")?;
+    writeln!(
+        src,
+        "      writeln(\"  Reduced \", nItems, \" results into 1\");"
+    )?;
+    writeln!(src, "    else")?;
+    writeln!(
+        src,
+        "      writeln(\"  WARN: reduce produced no valid result (no successful inputs)\");"
     )?;
 
     Ok(())
@@ -1033,6 +1070,11 @@ fn write_store_phase(src: &mut String, manifest: &Manifest) -> Result<()> {
         "    // ================================================================"
     )?;
     writeln!(src)?;
+    // A store failure means the user's result never reached their storage. Track
+    // it and abort with a non-zero status at the end rather than warn-and-exit-0
+    // (soundness: do not report overall success when results were not stored).
+    writeln!(src, "    var storeFailed: bool = false;")?;
+    writeln!(src)?;
 
     match manifest.workload.gather.as_str() {
         // Reduce strategies produce a single result in slot 0
@@ -1043,10 +1085,13 @@ fn write_store_phase(src: &mut String, manifest: &Manifest) -> Result<()> {
                 src,
                 "        const rc = c_store_result(0: c_int, c_ptrTo(resultData[0][0]), resultSizes[0]);"
             )?;
+            writeln!(src, "        if rc != 0 {{")?;
             writeln!(
                 src,
-                "        if rc != 0 then writeln(\"  WARN: c_store_result(0) returned \", rc);"
+                "          writeln(\"  ERROR: c_store_result(0) returned \", rc);"
             )?;
+            writeln!(src, "          storeFailed = true;")?;
+            writeln!(src, "        }}")?;
             writeln!(src, "      }}")?;
             writeln!(src, "    }}")?;
         }
@@ -1059,10 +1104,13 @@ fn write_store_phase(src: &mut String, manifest: &Manifest) -> Result<()> {
                 src,
                 "        const rc = c_store_result(0: c_int, c_ptrTo(resultData[foundIdx][0]), resultSizes[foundIdx]);"
             )?;
+            writeln!(src, "        if rc != 0 {{")?;
             writeln!(
                 src,
-                "        if rc != 0 then writeln(\"  WARN: c_store_result(0) returned \", rc);"
+                "          writeln(\"  ERROR: c_store_result(0) returned \", rc);"
             )?;
+            writeln!(src, "          storeFailed = true;")?;
+            writeln!(src, "        }}")?;
             writeln!(src, "      }}")?;
             writeln!(src, "    }}")?;
         }
@@ -1076,14 +1124,29 @@ fn write_store_phase(src: &mut String, manifest: &Manifest) -> Result<()> {
                 src,
                 "        const rc = c_store_result(i: c_int, c_ptrTo(resultData[i][0]), resultSizes[i]);"
             )?;
+            writeln!(src, "        if rc != 0 {{")?;
             writeln!(
                 src,
-                "        if rc != 0 then writeln(\"  WARN: c_store_result(\", i, \") returned \", rc);"
+                "          writeln(\"  ERROR: c_store_result(\", i, \") returned \", rc);"
             )?;
+            writeln!(src, "          storeFailed = true;")?;
+            writeln!(src, "        }}")?;
             writeln!(src, "      }}")?;
             writeln!(src, "    }}")?;
         }
     }
+
+    writeln!(src)?;
+    writeln!(
+        src,
+        "    // Fail loudly if any result could not be stored — never exit 0 on a"
+    )?;
+    writeln!(src, "    // silent storage failure.")?;
+    writeln!(src, "    if storeFailed then")?;
+    writeln!(
+        src,
+        "      halt(\"ERROR: one or more results failed to store; aborting with failure status\");"
+    )?;
 
     writeln!(src)?;
     Ok(())
