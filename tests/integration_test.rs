@@ -1612,3 +1612,61 @@ fn test_regression_chapel_comm_layer_in_build() {
         "Build script should set CHPL_COMM from manifest"
     );
 }
+
+// ===========================================================================
+// Soundness: gather/store must never report success on failed inputs/stores
+// ===========================================================================
+
+/// The reduce gather must seed its accumulator from the first SUCCESSFUL item
+/// (never blindly item 0, which may have failed) and mark the reduced result
+/// valid only if at least one input succeeded — `resultOk[0] = haveAccum`,
+/// never an unconditional `resultOk[0] = true`.
+#[test]
+fn reduce_gather_is_failure_aware() {
+    let m = parse_manifest(&make_manifest_toml("chunk", "reduce"));
+    let (dir, safe_name) = generate_to_tempdir(&m);
+    let chpl = fs::read_to_string(
+        dir.path()
+            .join(format!("chapel/{safe_name}_distributed.chpl")),
+    )
+    .unwrap();
+
+    assert!(
+        chpl.contains("haveAccum"),
+        "reduce gather must track whether any successful input was folded"
+    );
+    assert!(
+        chpl.contains("resultOk[0] = haveAccum;"),
+        "reduce result validity must follow haveAccum"
+    );
+    assert!(
+        !chpl.contains("resultOk[0] = true;"),
+        "reduce must not unconditionally mark the result valid"
+    );
+}
+
+/// The store phase must not silently warn-and-exit-0 on a c_store_result
+/// failure: it tracks the failure and halts with a non-zero status.
+#[test]
+fn store_phase_aborts_on_store_failure() {
+    let m = parse_manifest(&make_manifest_toml("chunk", "merge"));
+    let (dir, safe_name) = generate_to_tempdir(&m);
+    let chpl = fs::read_to_string(
+        dir.path()
+            .join(format!("chapel/{safe_name}_distributed.chpl")),
+    )
+    .unwrap();
+
+    assert!(
+        chpl.contains("storeFailed"),
+        "store phase must track store failures"
+    );
+    assert!(
+        chpl.contains("halt("),
+        "store phase must halt (non-zero exit) when a result fails to store"
+    );
+    assert!(
+        !chpl.contains("WARN: c_store_result"),
+        "store failures must be errors, not silent warnings"
+    );
+}
