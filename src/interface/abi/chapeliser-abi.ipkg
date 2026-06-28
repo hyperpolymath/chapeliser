@@ -14,3 +14,4 @@ modules = Chapeliser.ABI.Types
         , Chapeliser.ABI.Partition
         , Chapeliser.ABI.Invariants
         , Chapeliser.ABI.FfiSeam
+        , Chapeliser.ABI.Capstone
