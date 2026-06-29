@@ -3,11 +3,11 @@
 # See: https://github.com/hyperpolymath/gv-clade-index
 
 [identity]
-uuid = "a5ea1382-a34c-5334-8a46-a2ebe904c810"
+uuid = "7160420d-86e6-5305-81a6-188198c3a8d1"
 primary-forge = "github"
 primary-owner = "hyperpolymath"
-canonical-name = "rsr-template-repo"
-prefixed-name = "rm-rsr-template-repo"
+canonical-name = "chapeliser"
+prefixed-name = "rm-chapeliser"
 
 [clade]
 primary = "rm"
@@ -16,9 +16,9 @@ assigned = "2026-03-16"
 rationale = ""
 
 [forges]
-github = "hyperpolymath/rsr-template-repo"
-gitlab = "hyperpolymath/rsr-template-repo"
-bitbucket = "hyperpolymath/rsr-template-repo"
+github = "hyperpolymath/chapeliser"
+gitlab = "hyperpolymath/chapeliser"
+bitbucket = "hyperpolymath/chapeliser"
 
 [lineage]
 type = "standalone"
