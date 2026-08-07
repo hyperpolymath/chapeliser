@@ -1,5 +1,5 @@
-# This workflow is managed by gh actions-lock.
 # SPDX-License-Identifier: MPL-2.0
+# This workflow is managed by gh actions-lock.
 # Provable — machine-checks the claims Chapeliser makes outside the Rust layer.
 #
 # The Rust CLI/codegen is covered by rust-ci.yml. This workflow verifies the
