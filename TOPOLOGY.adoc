@@ -1,14 +1,18 @@
-<!-- SPDX-License-Identifier: CC-BY-SA-4.0 -->
-<!-- Copyright (c) 2026 Jonathan D.A. Jewell (hyperpolymath) <j.d.a.jewell@open.ac.uk> -->
-# TOPOLOGY.md — chapeliser
+== TOPOLOGY.md — chapeliser
 
-## Purpose
+=== Purpose
 
-chapeliser is a general-purpose Chapel acceleration framework that distributes any workload across Chapel clusters without the user writing Chapel code. It reads a `chapeliser.toml` manifest describing entry points, data partition strategies, and gather strategies, then generates Chapel wrapper code, a Zig FFI bridge, and C headers. chapeliser is priority #2 in the -iser family, targeting any compute workload that benefits from data-parallel or distributed execution.
+chapeliser is a general-purpose Chapel acceleration framework that
+distributes any workload across Chapel clusters without the user writing
+Chapel code. It reads a `+chapeliser.toml+` manifest describing entry
+points, data partition strategies, and gather strategies, then generates
+Chapel wrapper code, a Zig FFI bridge, and C headers. chapeliser is
+priority #2 in the -iser family, targeting any compute workload that
+benefits from data-parallel or distributed execution.
 
-## Module Map
+=== Module Map
 
-```
+....
 chapeliser/
 ├── src/
 │   ├── main.rs                    # CLI entry point (clap): init, validate, generate, build, run, info
@@ -20,11 +24,11 @@ chapeliser/
 ├── verification/                  # Proof harnesses
 ├── container/                     # Stapeln container ecosystem
 └── .machine_readable/             # A2ML metadata
-```
+....
 
-## Data Flow
+=== Data Flow
 
-```
+....
 chapeliser.toml manifest
         │
    ┌────▼────┐
@@ -43,4 +47,4 @@ chapeliser.toml manifest
    ┌────▼────┐
    │  Chapel  │  compile + distribute across Chapel cluster
    └─────────┘
-```
+....
