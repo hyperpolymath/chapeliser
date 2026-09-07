@@ -42,5 +42,5 @@ last-result = "warn"  # unknown | pass | warn | fail — Rust layer green (63 te
 
 [language-portfolio-audit-20260907]
 scope = "Evidence audit and scoped repairs; no blanket readiness upgrade"
-report = "https://github.com/hyperpolymath/nextgen-languages/blob/main/docs/audits/2026-09-07-language-portfolio.md"
+report = "https://github.com/hyperpolymath/nextgen-languages/blob/161df54/docs/audits/2026-09-07-language-portfolio.md"
 metadata-path = ".machine_readable/descriptiles/"
