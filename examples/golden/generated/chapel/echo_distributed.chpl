@@ -196,13 +196,23 @@ module echo_Distributed {
     // Phase 4: Store results via c_store_result on locale 0
     // ================================================================
 
+    var storeFailed: bool = false;
+
     on Locales[0] {
       for i in 0..#nItems {
         if !resultOk[i] then continue;
         const rc = c_store_result(i: c_int, c_ptrTo(resultData[i][0]), resultSizes[i]);
-        if rc != 0 then writeln("  WARN: c_store_result(", i, ") returned ", rc);
+        if rc != 0 {
+          writeln("  ERROR: c_store_result(", i, ") returned ", rc);
+          storeFailed = true;
+        }
       }
     }
+
+    // Fail loudly if any result could not be stored — never exit 0 on a
+    // silent storage failure.
+    if storeFailed then
+      halt("ERROR: one or more results failed to store; aborting with failure status");
 
     c_shutdown();
     const elapsed = timeSinceEpoch().totalSeconds() - t0;
