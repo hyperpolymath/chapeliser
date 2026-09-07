@@ -7,7 +7,9 @@
 # WARNING: This component can execute shell commands!
 # It requires explicit authorisation via the Leash system.
 #
-# Usage:
+# TEMPLATE ONLY: render placeholders and validate a signed K9 contract before use.
+# This file is not deployable.
+# Example commands for the rendered contract:
 #   nickel typecheck container/deploy.k9.ncl
 #   k9-svc validate container/deploy.k9.ncl
 #   k9-svc deploy container/deploy.k9.ncl --env production

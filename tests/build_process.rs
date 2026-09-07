@@ -4,12 +4,12 @@
 #![cfg(unix)]
 use std::{fs, os::unix::fs::PermissionsExt, process::Command};
 
-fn fixture(chpl_exit: u8, script_exit: u8) -> tempfile::TempDir {
+fn fixture(chpl_exit: u8, zig_exit: u8, script_exit: u8) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     chapeliser::manifest::init_manifest(dir.path().to_str().unwrap()).unwrap();
     let tools = dir.path().join("tools");
     fs::create_dir(&tools).unwrap();
-    for (name, code) in [("chpl", chpl_exit), ("zig", 0)] {
+    for (name, code) in [("chpl", chpl_exit), ("zig", zig_exit)] {
         let path = tools.join(name);
         fs::write(&path, format!("#!/bin/sh\nexit {code}\n")).unwrap();
         fs::set_permissions(path, fs::Permissions::from_mode(0o755)).unwrap();
@@ -36,7 +36,7 @@ fn build(dir: &std::path::Path) -> std::process::Output {
 
 #[test]
 fn build_runs_in_generated_directory_and_forwards_mode() {
-    let dir = fixture(0, 0);
+    let dir = fixture(0, 0, 0);
     let output = build(dir.path());
     assert!(
         output.status.success(),
@@ -51,14 +51,16 @@ fn build_runs_in_generated_directory_and_forwards_mode() {
 
 #[test]
 fn failed_compiler_probe_does_not_run_build_script() {
-    let dir = fixture(7, 0);
-    assert!(!build(dir.path()).status.success());
-    assert!(!dir.path().join("generated/chapeliser/invoked").exists());
+    for (chpl, zig) in [(7, 0), (0, 7)] {
+        let dir = fixture(chpl, zig, 0);
+        assert!(!build(dir.path()).status.success());
+        assert!(!dir.path().join("generated/chapeliser/invoked").exists());
+    }
 }
 
 #[test]
 fn failed_build_script_is_not_reported_as_success() {
-    let dir = fixture(0, 9);
+    let dir = fixture(0, 0, 9);
     assert!(!build(dir.path()).status.success());
     assert!(dir.path().join("generated/chapeliser/invoked").exists());
 }
