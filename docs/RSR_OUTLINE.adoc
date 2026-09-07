@@ -159,12 +159,13 @@ project/
 │   ├── humans.txt
 │   └── security.txt
 ├── .machine_readable/         # ALL machine-readable content
-│   ├── STATE.a2ml             # Project state, progress, blockers
-│   ├── META.a2ml              # Architecture decisions, governance
-│   ├── ECOSYSTEM.a2ml         # Ecosystem position, relationships
-│   ├── AGENTIC.a2ml           # AI agent interaction patterns
-│   ├── NEUROSYM.a2ml          # Neurosymbolic integration config
-│   ├── PLAYBOOK.a2ml          # Operational runbook
+│   ├── descriptiles/          # Canonical descriptive anchors
+│   │   ├── STATE.a2ml             # Project state, progress, blockers
+│   │   ├── META.a2ml              # Architecture decisions, governance
+│   │   ├── ECOSYSTEM.a2ml         # Ecosystem position, relationships
+│   │   ├── AGENTIC.a2ml           # AI agent interaction patterns
+│   │   ├── NEUROSYM.a2ml          # Neurosymbolic integration config
+│   │   └── PLAYBOOK.a2ml          # Operational runbook
 │   ├── bot_directives/        # Per-bot rules and constraints
 │   └── contractiles/          # Policy enforcement contracts
 │       ├── k9/                # Security levels (Kennel/Yard/Hunt)
@@ -227,7 +228,7 @@ project/
 * TypeScript/JavaScript (use AffineScript)
 * CUE (use Guile/Nickel)
 * `Dockerfile` (use `Containerfile`)
-* npm, Bun, pnpm, yarn (use Deno)
+* Introducing Deno runtime dependencies (Bun is the estate JavaScript runtime)
 * Go (use Rust)
 
 == STATE.a2ml

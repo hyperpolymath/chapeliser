@@ -157,6 +157,9 @@ For k9-svc managed deployments:
 # The .in file is a template, not a deployable K9 contract.
 # Render all placeholders into deploy.k9.ncl, provide a valid K9 header and
 # pedigree, and verify its signature before validation or Hunt authorisation.
+# K9! is the envelope sentinel, not part of the Nickel payload.
+# Preserve every other line so malformed headers/payloads still fail.
+sed '1{/^K9!$/d;}' container/deploy.k9.ncl | nickel typecheck
 k9-svc validate container/deploy.k9.ncl
 ----
 

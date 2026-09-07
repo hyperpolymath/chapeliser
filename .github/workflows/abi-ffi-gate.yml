@@ -25,7 +25,9 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - name: Install Julia 1.11.5
         run: |
-          curl -fsSL https://julialang-s3.julialang.org/bin/linux/x64/1.11/julia-1.11.5-linux-x86_64.tar.gz -o /tmp/julia.tar.gz
+          curl --proto "=https" --proto-redir "=https" --tlsv1.2 -fsSL https://julialang-s3.julialang.org/bin/linux/x64/1.11/julia-1.11.5-linux-x86_64.tar.gz -o /tmp/julia.tar.gz
+          # Official julialang-s3.julialang.org/bin/checksums/julia-1.11.5.sha256
+          echo '723e878c642220cc0251a0e13758c059a389cadc7f01376feaf1ea7388fe8f9c  /tmp/julia.tar.gz' | sha256sum --check --strict
           tar -xf /tmp/julia.tar.gz -C /tmp
           echo "/tmp/julia-1.11.5/bin" >> "$GITHUB_PATH"
       - name: Run ABI-FFI gate
@@ -40,7 +42,9 @@ jobs:
       - uses: actions/checkout@v7.0.1
       - name: Install Zig 0.14.0
         run: |
-          curl -fsSL https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz -o /tmp/zig.tar.xz
+          curl --proto "=https" --proto-redir "=https" --tlsv1.2 -fsSL https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz -o /tmp/zig.tar.xz
+          # Official ziglang.org/download/index.json: 0.14.0 / x86_64-linux
+          echo '473ec26806133cf4d1918caf1a410f8403a13d979726a9045b421b685031a982  /tmp/zig.tar.xz' | sha256sum --check --strict
           tar -xf /tmp/zig.tar.xz -C /tmp
           echo "/tmp/zig-linux-x86_64-0.14.0" >> "$GITHUB_PATH"
       - name: zig test FFI
