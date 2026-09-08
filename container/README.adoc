@@ -59,8 +59,8 @@ All files use `{{PLACEHOLDER}}` tokens that are replaced by `just container-init
 | **vordr** runtime monitoring configuration. Defines health endpoints,
   crash detection, resource thresholds, and log output.
 
-| `deploy.k9.ncl`
-| **k9-svc** deployment component at Hunt trust level. Full pedigree
+| `deploy.k9.ncl.in`
+| Uninstantiated **k9-svc** deployment template at Hunt trust level. Proposed pedigree
   (L1--L5), environment configs (dev/staging/prod), container
   configuration, and rolling deployment strategy.
 
@@ -154,11 +154,13 @@ For k9-svc managed deployments:
 
 [source,bash]
 ----
-# Validate the deployment component
-nickel typecheck container/deploy.k9.ncl
-
-# Deploy (requires Hunt-level authorisation)
-k9-svc deploy container/deploy.k9.ncl --env production
+# The .in file is a template, not a deployable K9 contract.
+# Render all placeholders into deploy.k9.ncl, provide a valid K9 header and
+# pedigree, and verify its signature before validation or Hunt authorisation.
+# K9! is the envelope sentinel, not part of the Nickel payload.
+# Preserve every other line so malformed headers/payloads still fail.
+sed '1{/^K9!$/d;}' container/deploy.k9.ncl | nickel typecheck
+k9-svc validate container/deploy.k9.ncl
 ----
 
 == Base Images

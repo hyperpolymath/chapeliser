@@ -39,3 +39,8 @@ actions = [
 [maintenance-status]
 last-run-utc = "2026-06-18T00:00:00Z"
 last-result = "warn"  # unknown | pass | warn | fail — Rust layer green (63 tests); provable.yml pending first run
+
+[language-portfolio-audit-20260907]
+scope = "Evidence audit and scoped repairs; no blanket readiness upgrade"
+report = "https://github.com/hyperpolymath/nextgen-languages/blob/161df54/docs/audits/2026-09-07-language-portfolio.md"
+metadata-path = ".machine_readable/descriptiles/"

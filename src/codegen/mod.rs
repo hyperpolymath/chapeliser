@@ -49,7 +49,7 @@ pub fn build(manifest: &Manifest, release: bool) -> Result<()> {
 
     // Check for required tools
     let chpl_check = std::process::Command::new("chpl").arg("--version").output();
-    if chpl_check.is_err() {
+    if !chpl_check.is_ok_and(|output| output.status.success()) {
         anyhow::bail!(
             "Chapel compiler (chpl) not found on PATH.\n\
              Install Chapel: https://chapel-lang.org/download.html\n\
@@ -58,7 +58,7 @@ pub fn build(manifest: &Manifest, release: bool) -> Result<()> {
     }
 
     let zig_check = std::process::Command::new("zig").arg("version").output();
-    if zig_check.is_err() {
+    if !zig_check.is_ok_and(|output| output.status.success()) {
         anyhow::bail!(
             "Zig compiler not found on PATH.\n\
              Install Zig: https://ziglang.org/download/\n\
@@ -69,7 +69,7 @@ pub fn build(manifest: &Manifest, release: bool) -> Result<()> {
     // Run the generated build script, passing release mode via env var
     let build_dir = Path::new("generated/chapeliser");
     let mut cmd = std::process::Command::new("bash");
-    cmd.arg(build_dir.join("build.sh")).current_dir(build_dir);
+    cmd.arg("build.sh").current_dir(build_dir);
 
     // Pass --fast (release) or --no-optimize (debug) to Chapel via CHPL_FLAGS
     if release {

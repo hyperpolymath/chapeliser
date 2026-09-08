@@ -30,7 +30,7 @@ canonical_locations:
   build_pipeline: "container/ct-build.sh"
   entrypoint: "container/entrypoint.sh"
   monitoring: "container/vordr.toml"
-  deployment: "container/deploy.k9.ncl"
+  deployment: "container/deploy.k9.ncl.in"
   example: "container/compose.example.toml"
 
 ---
