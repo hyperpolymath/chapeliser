@@ -4,6 +4,7 @@
 #![cfg(unix)]
 use std::{fs, os::unix::fs::PermissionsExt, process::Command};
 
+/// Create an isolated project with configurable compiler probes and build script.
 fn fixture(chpl_exit: u8, zig_exit: u8, script_exit: u8) -> tempfile::TempDir {
     let dir = tempfile::tempdir().unwrap();
     chapeliser::manifest::init_manifest(dir.path().to_str().unwrap()).unwrap();
@@ -24,6 +25,7 @@ fn fixture(chpl_exit: u8, zig_exit: u8, script_exit: u8) -> tempfile::TempDir {
     dir
 }
 
+/// Run a release build in the fixture with only its fake tools on `PATH`.
 fn build(dir: &std::path::Path) -> std::process::Output {
     let path = std::env::join_paths([dir.join("tools"), "/usr/bin".into(), "/bin".into()]).unwrap();
     Command::new(env!("CARGO_BIN_EXE_chapeliser"))
@@ -34,6 +36,7 @@ fn build(dir: &std::path::Path) -> std::process::Output {
         .unwrap()
 }
 
+/// The generated build script runs from its directory with release flags forwarded.
 #[test]
 fn build_runs_in_generated_directory_and_forwards_mode() {
     let dir = fixture(0, 0, 0);
@@ -49,6 +52,7 @@ fn build_runs_in_generated_directory_and_forwards_mode() {
     );
 }
 
+/// A failed Chapel or Zig probe prevents the generated build script from running.
 #[test]
 fn failed_compiler_probe_does_not_run_build_script() {
     for (chpl, zig) in [(7, 0), (0, 7)] {
@@ -58,6 +62,7 @@ fn failed_compiler_probe_does_not_run_build_script() {
     }
 }
 
+/// A generated build-script failure is propagated to the caller.
 #[test]
 fn failed_build_script_is_not_reported_as_success() {
     let dir = fixture(0, 0, 9);
